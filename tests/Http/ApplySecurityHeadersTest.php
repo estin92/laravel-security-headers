@@ -18,3 +18,24 @@ test('it applies the configured headers to the response', function () {
     $response->assertHeader('X-Frame-Options', 'DENY');
     $response->assertHeaderMissing('Referrer-Policy');
 });
+
+test('it applies strict-transport-security when hsts is enabled', function () {
+    config()->set('security-headers.hsts', [
+        'enabled' => true,
+        'max_age' => 31536000,
+        'include_subdomains' => true,
+        'preload' => false,
+    ]);
+
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+});
+
+test('it omits strict-transport-security when hsts is disabled', function () {
+    config()->set('security-headers.hsts', ['enabled' => false]);
+
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeaderMissing('Strict-Transport-Security');
+});
