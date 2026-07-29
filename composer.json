@@ -1,0 +1,55 @@
+{
+    "name": "estin92/laravel-security-headers",
+    "description": "Security response headers for Laravel: a content security policy engine, permissions policy, HSTS, hardening headers and an audit command, behind one config surface.",
+    "keywords": [
+        "laravel",
+        "security",
+        "headers",
+        "content-security-policy",
+        "csp",
+        "permissions-policy",
+        "hsts"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ian Austin"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "illuminate/support": "^12.0 || ^13.0",
+        "illuminate/http": "^12.0 || ^13.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.18",
+        "orchestra/testbench": "^10.0 || ^11.0",
+        "pestphp/pest": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Estin92\\SecurityHeaders\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Estin92\\SecurityHeaders\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Estin92\\SecurityHeaders\\SecurityHeadersServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
