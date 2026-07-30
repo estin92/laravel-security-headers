@@ -79,8 +79,14 @@ return [
     ],
 
     'csp' => [
-        'enabled' => env('SECURITY_HEADERS_CSP_ENABLED', false),
-        'policy' => StrictPolicy::class,
+        'enforce' => [
+            'enabled' => env('SECURITY_HEADERS_CSP_ENABLED', false),
+            'policy' => StrictPolicy::class,
+        ],
+        'report_only' => [
+            'enabled' => env('SECURITY_HEADERS_CSP_REPORT_ONLY_ENABLED', false),
+            'policy' => StrictPolicy::class,
+        ],
     ],
 
 ];

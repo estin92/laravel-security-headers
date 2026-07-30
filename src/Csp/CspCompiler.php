@@ -14,6 +14,10 @@ class CspCompiler
             throw InvalidCspDirective::missingNonce();
         }
 
+        if ($policy->directives() === []) {
+            throw InvalidCspDirective::emptyPolicy();
+        }
+
         $parts = [];
 
         foreach ($policy->directives() as $name => $sources) {

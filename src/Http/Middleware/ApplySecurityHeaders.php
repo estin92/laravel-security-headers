@@ -22,9 +22,11 @@ class ApplySecurityHeaders
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $policy = $this->cspPolicy();
+        $enforce = $this->cspChannel('enforce');
+        $reportOnly = $this->cspChannel('report_only');
 
-        $requiresNonce = $policy?->requiresNonce() === true;
+        $requiresNonce = $enforce?->requiresNonce() === true
+            || $reportOnly?->requiresNonce() === true;
 
         if ($requiresNonce) {
             Vite::useCspNonce();
@@ -50,10 +52,17 @@ class ApplySecurityHeaders
             $response->headers->set('Permissions-Policy', $permissionsPolicy);
         }
 
-        if ($policy !== null) {
+        if ($enforce !== null) {
             $response->headers->set(
                 'Content-Security-Policy',
-                (new CspCompiler)->compile($policy, $nonce),
+                (new CspCompiler)->compile($enforce, $nonce),
+            );
+        }
+
+        if ($reportOnly !== null) {
+            $response->headers->set(
+                'Content-Security-Policy-Report-Only',
+                (new CspCompiler)->compile($reportOnly, $nonce),
             );
         }
 
@@ -85,12 +94,12 @@ class ApplySecurityHeaders
         return (new PermissionsPolicyCompiler)->compile(is_array($features) ? $features : []);
     }
 
-    private function cspPolicy(): ?CspPolicy
+    private function cspChannel(string $channel): ?CspPolicy
     {
-        if (config('security-headers.csp.enabled') !== true) {
+        if (config("security-headers.csp.{$channel}.enabled") !== true) {
             return null;
         }
 
-        return app(CspPolicyResolver::class)->resolve(config('security-headers.csp.policy'));
+        return app(CspPolicyResolver::class)->resolve(config("security-headers.csp.{$channel}.policy"));
     }
 }

@@ -54,6 +54,13 @@ test('it throws when a required nonce is not supplied', function () {
         ->toThrow(InvalidCspDirective::class);
 });
 
+test('it rejects a policy with no directives', function () {
+    $policy = new FakeCspPolicy(function () {});
+
+    expect(fn () => (new CspCompiler)->compile($policy, null))
+        ->toThrow(InvalidCspDirective::class);
+});
+
 test('it ignores a nonce on a policy that does not request one', function () {
     $policy = new FakeCspPolicy(function () {
         $this->directive('script-src', Keyword::Self);

@@ -29,6 +29,11 @@ class InvalidCspDirective extends InvalidArgumentException
         return new self('The policy requires a nonce, but none was supplied.');
     }
 
+    public static function emptyPolicy(): self
+    {
+        return new self('A CSP policy must declare at least one directive.');
+    }
+
     public static function conflictingNone(string $directive): self
     {
         return new self("The {$directive} directive cannot combine 'none' with other sources.");
