@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Estin92\SecurityHeaders\Headers;
 
-class Hsts
+class HstsCompiler
 {
     // One year in seconds.
     private const DEFAULT_MAX_AGE = 31536000;

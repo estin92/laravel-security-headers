@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-use Estin92\SecurityHeaders\Headers\Hsts;
+use Estin92\SecurityHeaders\Headers\HstsCompiler;
 
 test('it returns null when hsts is disabled', function () {
-    $hsts = new Hsts(['enabled' => false]);
+    $hsts = new HstsCompiler(['enabled' => false]);
 
     expect($hsts->compile())->toBeNull();
 });
 
 test('it assembles max-age with subdomains by default', function () {
-    $hsts = new Hsts([
+    $hsts = new HstsCompiler([
         'enabled' => true,
         'max_age' => 31536000,
         'include_subdomains' => true,
@@ -22,7 +22,7 @@ test('it assembles max-age with subdomains by default', function () {
 });
 
 test('it omits the subdomains token when include_subdomains is false', function () {
-    $hsts = new Hsts([
+    $hsts = new HstsCompiler([
         'enabled' => true,
         'max_age' => 31536000,
         'include_subdomains' => false,
@@ -33,7 +33,7 @@ test('it omits the subdomains token when include_subdomains is false', function 
 });
 
 test('it appends preload when enabled', function () {
-    $hsts = new Hsts([
+    $hsts = new HstsCompiler([
         'enabled' => true,
         'max_age' => 63072000,
         'include_subdomains' => true,
@@ -44,13 +44,13 @@ test('it appends preload when enabled', function () {
 });
 
 test('it emits only max-age when the flags are absent', function () {
-    $hsts = new Hsts(['enabled' => true]);
+    $hsts = new HstsCompiler(['enabled' => true]);
 
     expect($hsts->compile())->toBe('max-age=31536000');
 });
 
 test('a hostile max-age cannot escape the header value', function (string $maxAge) {
-    $hsts = new Hsts([
+    $hsts = new HstsCompiler([
         'enabled' => true,
         'max_age' => $maxAge,
         'include_subdomains' => false,
@@ -70,7 +70,7 @@ test('a hostile max-age cannot escape the header value', function (string $maxAg
 ]);
 
 test('it returns null when the config is not the expected shape', function (mixed $config) {
-    $hsts = new Hsts($config);
+    $hsts = new HstsCompiler($config);
 
     expect($hsts->compile())->toBeNull();
 })->with([
@@ -80,7 +80,7 @@ test('it returns null when the config is not the expected shape', function (mixe
 ]);
 
 test('it accepts a numeric string max-age as env would supply it', function () {
-    $hsts = new Hsts([
+    $hsts = new HstsCompiler([
         'enabled' => true,
         'max_age' => '63072000',
         'include_subdomains' => false,
@@ -91,7 +91,7 @@ test('it accepts a numeric string max-age as env would supply it', function () {
 });
 
 test('it falls back to a safe max-age when the configured value is unusable', function (mixed $maxAge) {
-    $hsts = new Hsts([
+    $hsts = new HstsCompiler([
         'enabled' => true,
         'max_age' => $maxAge,
         'include_subdomains' => false,

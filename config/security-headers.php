@@ -29,6 +29,21 @@ return [
             'enabled' => env('SECURITY_HEADERS_X_XSS_PROTECTION_ENABLED', true),
             'value' => env('SECURITY_HEADERS_X_XSS_PROTECTION', '0'),
         ],
+
+        'cross_origin_opener_policy' => [
+            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_OPENER_POLICY_ENABLED', true),
+            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_OPENER_POLICY', 'same-origin'),
+        ],
+
+        'cross_origin_resource_policy' => [
+            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_RESOURCE_POLICY_ENABLED', true),
+            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_RESOURCE_POLICY', 'same-origin'),
+        ],
+
+        'cross_origin_embedder_policy' => [
+            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY_ENABLED', false),
+            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY', 'require-corp'),
+        ],
     ],
 
     'hsts' => [

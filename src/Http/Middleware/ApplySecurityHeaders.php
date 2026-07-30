@@ -8,8 +8,8 @@ use Closure;
 use Estin92\SecurityHeaders\Csp\CspCompiler;
 use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\CspPolicyResolver;
-use Estin92\SecurityHeaders\Headers\Hsts;
-use Estin92\SecurityHeaders\Headers\SimpleHeaders;
+use Estin92\SecurityHeaders\Headers\FlatHeaderCompiler;
+use Estin92\SecurityHeaders\Headers\HstsCompiler;
 use Estin92\SecurityHeaders\PermissionsPolicy\PermissionsPolicyCompiler;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Vite;
@@ -34,7 +34,7 @@ class ApplySecurityHeaders
 
         $nonce = $requiresNonce ? Vite::cspNonce() : null;
 
-        foreach ($this->staticHeaders()->compile() as $name => $value) {
+        foreach ($this->flatHeaders()->compile() as $name => $value) {
             $response->headers->set($name, $value);
         }
 
@@ -60,18 +60,18 @@ class ApplySecurityHeaders
         return $response;
     }
 
-    private function staticHeaders(): SimpleHeaders
+    private function flatHeaders(): FlatHeaderCompiler
     {
         $configured = config('security-headers.headers');
 
-        return new SimpleHeaders(is_array($configured) ? $configured : []);
+        return new FlatHeaderCompiler(is_array($configured) ? $configured : []);
     }
 
-    private function hsts(): Hsts
+    private function hsts(): HstsCompiler
     {
         $configured = config('security-headers.hsts');
 
-        return new Hsts(is_array($configured) ? $configured : []);
+        return new HstsCompiler(is_array($configured) ? $configured : []);
     }
 
     private function permissionsPolicy(): ?string

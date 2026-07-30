@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Estin92\SecurityHeaders\Exceptions;
 
+use Estin92\SecurityHeaders\Support\MessageValue;
 use InvalidArgumentException;
 
 class InvalidCspDirective extends InvalidArgumentException
 {
     public static function invalidName(string $name): self
     {
-        return new self('Invalid CSP directive name: '.self::escape($name));
+        return new self('Invalid CSP directive name: '.MessageValue::escape($name));
     }
 
     public static function invalidSource(string $source): self
     {
-        return new self('Invalid CSP source: '.self::escape($source));
+        return new self('Invalid CSP source: '.MessageValue::escape($source));
     }
 
     public static function invalidNonce(): self
@@ -40,11 +41,6 @@ class InvalidCspDirective extends InvalidArgumentException
 
     public static function keywordMustUseEnum(string $source): self
     {
-        return new self('Use the Keyword enum for the CSP keyword source: '.self::escape($source));
-    }
-
-    private static function escape(string $value): string
-    {
-        return (string) json_encode($value);
+        return new self('Use the Keyword enum for the CSP keyword source: '.MessageValue::escape($source));
     }
 }
