@@ -3,10 +3,11 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Csp\CspPolicy;
+use Estin92\SecurityHeaders\Csp\Keyword as CspKeyword;
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspPolicy;
 use Estin92\SecurityHeaders\Http\Middleware\ApplySecurityHeaders;
-use Estin92\SecurityHeaders\PermissionsPolicy\Allow;
+use Estin92\SecurityHeaders\PermissionsPolicy\Keyword;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Vite;
 
@@ -14,7 +15,7 @@ class NoncelessPolicy extends CspPolicy
 {
     protected function define(): void
     {
-        $this->directive('default-src', "'self'");
+        $this->directive('default-src', CspKeyword::Self);
     }
 }
 
@@ -37,7 +38,7 @@ test('it applies the permissions-policy when enabled', function () {
         'enabled' => true,
         'features' => [
             'camera' => [],
-            'fullscreen' => [Allow::Self],
+            'fullscreen' => [Keyword::Self],
         ],
     ]);
 

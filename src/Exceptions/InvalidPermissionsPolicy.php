@@ -25,7 +25,7 @@ class InvalidPermissionsPolicy extends InvalidArgumentException
 
     public static function keywordMustUseEnum(string $keyword): self
     {
-        return new self("Use the Allow enum for the {$keyword} keyword, not a raw string.");
+        return new self("Use the Keyword enum for the {$keyword} keyword, not a raw string.");
     }
 
     private static function escape(string $value): string

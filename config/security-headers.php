@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
-use Estin92\SecurityHeaders\PermissionsPolicy\Allow;
+use Estin92\SecurityHeaders\PermissionsPolicy\Keyword;
 
 return [
 
@@ -46,7 +46,7 @@ return [
             'camera' => [],
             'display-capture' => [],
             'encrypted-media' => [],
-            'fullscreen' => [Allow::Self],
+            'fullscreen' => [Keyword::Self],
             'geolocation' => [],
             'gyroscope' => [],
             'magnetometer' => [],
@@ -54,8 +54,8 @@ return [
             'midi' => [],
             'payment' => [],
             'picture-in-picture' => [],
-            'publickey-credentials-create' => [Allow::Self],
-            'publickey-credentials-get' => [Allow::Self],
+            'publickey-credentials-create' => [Keyword::Self],
+            'publickey-credentials-get' => [Keyword::Self],
             'screen-wake-lock' => [],
             'serial' => [],
             'usb' => [],

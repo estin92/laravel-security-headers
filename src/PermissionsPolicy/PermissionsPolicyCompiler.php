@@ -33,16 +33,16 @@ class PermissionsPolicyCompiler
      */
     private function allowlist(string $feature, array $allowlist): string
     {
-        if ($allowlist === [Allow::Any]) {
+        if ($allowlist === [Keyword::Any]) {
             return '*';
         }
 
-        if (in_array(Allow::Any, $allowlist, true)) {
+        if (in_array(Keyword::Any, $allowlist, true)) {
             throw InvalidPermissionsPolicy::wildcardMustBeAlone($feature);
         }
 
         $items = array_map(
-            fn (mixed $item): string => $item instanceof Allow
+            fn (mixed $item): string => $item instanceof Keyword
                 ? $item->value
                 : '"'.$this->guardOrigin(is_string($item) ? $item : '').'"',
             $allowlist,
@@ -64,7 +64,7 @@ class PermissionsPolicyCompiler
             throw InvalidPermissionsPolicy::invalidOrigin($origin);
         }
 
-        if (Allow::tryFrom($origin) !== null) {
+        if (Keyword::tryFrom($origin) !== null) {
             throw InvalidPermissionsPolicy::keywordMustUseEnum($origin);
         }
 

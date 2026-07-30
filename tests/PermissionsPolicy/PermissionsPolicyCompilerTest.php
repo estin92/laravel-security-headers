@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Exceptions\InvalidPermissionsPolicy;
-use Estin92\SecurityHeaders\PermissionsPolicy\Allow;
+use Estin92\SecurityHeaders\PermissionsPolicy\Keyword;
 use Estin92\SecurityHeaders\PermissionsPolicy\PermissionsPolicyCompiler;
 
 test('it returns null when there are no features', function () {
@@ -16,18 +16,18 @@ test('it denies a feature with an empty allowlist', function () {
 });
 
 test('it allows a feature for self', function () {
-    expect((new PermissionsPolicyCompiler)->compile(['fullscreen' => [Allow::Self]]))
+    expect((new PermissionsPolicyCompiler)->compile(['fullscreen' => [Keyword::Self]]))
         ->toBe('fullscreen=(self)');
 });
 
 test('it allows a feature for any origin', function () {
-    expect((new PermissionsPolicyCompiler)->compile(['autoplay' => [Allow::Any]]))
+    expect((new PermissionsPolicyCompiler)->compile(['autoplay' => [Keyword::Any]]))
         ->toBe('autoplay=*');
 });
 
 test('it quotes origin strings and leaves keywords unquoted', function () {
     $compiled = (new PermissionsPolicyCompiler)->compile([
-        'geolocation' => [Allow::Self, 'https://maps.example.com'],
+        'geolocation' => [Keyword::Self, 'https://maps.example.com'],
     ]);
 
     expect($compiled)->toBe('geolocation=(self "https://maps.example.com")');
@@ -37,7 +37,7 @@ test('it joins multiple features with a comma and space', function () {
     $compiled = (new PermissionsPolicyCompiler)->compile([
         'camera' => [],
         'microphone' => [],
-        'fullscreen' => [Allow::Self],
+        'fullscreen' => [Keyword::Self],
     ]);
 
     expect($compiled)->toBe('camera=(), microphone=(), fullscreen=(self)');
@@ -55,19 +55,19 @@ test('it rejects a feature name that is not a valid token', function (string $fe
 
 test('it rejects the wildcard combined with an origin', function () {
     expect(fn () => (new PermissionsPolicyCompiler)->compile([
-        'geolocation' => [Allow::Any, 'https://example.com'],
+        'geolocation' => [Keyword::Any, 'https://example.com'],
     ]))->toThrow(InvalidPermissionsPolicy::class);
 });
 
 test('it rejects the wildcard combined with self', function () {
     expect(fn () => (new PermissionsPolicyCompiler)->compile([
-        'geolocation' => [Allow::Self, Allow::Any],
+        'geolocation' => [Keyword::Self, Keyword::Any],
     ]))->toThrow(InvalidPermissionsPolicy::class);
 });
 
 test('it allows self combined with one or more origins', function () {
     $compiled = (new PermissionsPolicyCompiler)->compile([
-        'geolocation' => [Allow::Self, 'https://a.example.com', 'https://b.example.com'],
+        'geolocation' => [Keyword::Self, 'https://a.example.com', 'https://b.example.com'],
     ]);
 
     expect($compiled)->toBe('geolocation=(self "https://a.example.com" "https://b.example.com")');

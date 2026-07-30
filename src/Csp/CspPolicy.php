@@ -26,12 +26,12 @@ abstract class CspPolicy
 
     abstract protected function define(): void;
 
-    final protected function directive(string $name, string ...$sources): void
+    final protected function directive(string $name, Keyword|string ...$sources): void
     {
         $this->record($name, $sources);
     }
 
-    final protected function directiveWithNonce(string $name, string ...$sources): void
+    final protected function directiveWithNonce(string $name, Keyword|string ...$sources): void
     {
         $this->record($name, $sources);
         $this->nonced[$name] = true;
@@ -62,7 +62,7 @@ abstract class CspPolicy
     }
 
     /**
-     * @param  array<string>  $sources
+     * @param  array<Keyword|string>  $sources
      */
     private function record(string $name, array $sources): void
     {
@@ -70,9 +70,25 @@ abstract class CspPolicy
             throw new LogicException('A CSP policy cannot be modified after it has been defined.');
         }
 
+        $normalised = array_map(
+            fn (Keyword|string $source): string => $source instanceof Keyword
+                ? $source->value
+                : $this->guardRawSource($source),
+            $sources,
+        );
+
         $existing = $this->directives[$name] ?? [];
 
-        $this->directives[$name] = array_values(array_unique([...$existing, ...$sources]));
+        $this->directives[$name] = array_values(array_unique([...$existing, ...$normalised]));
+    }
+
+    private function guardRawSource(string $source): string
+    {
+        if (Keyword::tryFrom($source) !== null || Keyword::tryFrom("'{$source}'") !== null) {
+            throw InvalidCspDirective::keywordMustUseEnum($source);
+        }
+
+        return $source;
     }
 
     private function ensureDefined(): void

@@ -38,6 +38,11 @@ class InvalidCspDirective extends InvalidArgumentException
         return new self("The {$directive} directive cannot be both valueless and carry sources or a nonce.");
     }
 
+    public static function keywordMustUseEnum(string $source): self
+    {
+        return new self('Use the Keyword enum for the CSP keyword source: '.self::escape($source));
+    }
+
     private static function escape(string $value): string
     {
         return (string) json_encode($value);

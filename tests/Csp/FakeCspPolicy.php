@@ -6,6 +6,7 @@ namespace Estin92\SecurityHeaders\Tests\Csp;
 
 use Closure;
 use Estin92\SecurityHeaders\Csp\CspPolicy;
+use Estin92\SecurityHeaders\Csp\Keyword;
 
 class FakeCspPolicy extends CspPolicy
 {
@@ -16,7 +17,7 @@ class FakeCspPolicy extends CspPolicy
         Closure::bind($this->define, $this, CspPolicy::class)();
     }
 
-    public function declareOutsideDefinition(string $name, string ...$sources): void
+    public function declareOutsideDefinition(string $name, Keyword|string ...$sources): void
     {
         $this->directive($name, ...$sources);
     }

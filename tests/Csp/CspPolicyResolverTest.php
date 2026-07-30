@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\CspPolicyResolver;
+use Estin92\SecurityHeaders\Csp\Keyword;
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspPolicy;
 
@@ -13,7 +14,7 @@ class DependentPolicy extends CspPolicy
 
     protected function define(): void
     {
-        $this->directive('connect-src', "'self'", $this->host);
+        $this->directive('connect-src', Keyword::Self, $this->host);
     }
 }
 

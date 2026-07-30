@@ -3,13 +3,14 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Csp\CspCompiler;
+use Estin92\SecurityHeaders\Csp\Keyword;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspDirective;
 use Estin92\SecurityHeaders\Tests\Csp\FakeCspPolicy;
 
 test('it serialises directives into a policy string', function () {
     $policy = new FakeCspPolicy(function () {
-        $this->directive('default-src', "'self'");
-        $this->directive('img-src', "'self'", 'data:');
+        $this->directive('default-src', Keyword::Self);
+        $this->directive('img-src', Keyword::Self, 'data:');
     });
 
     expect((new CspCompiler)->compile($policy, null))
@@ -18,7 +19,7 @@ test('it serialises directives into a policy string', function () {
 
 test('it substitutes the nonce on a nonced directive', function () {
     $policy = new FakeCspPolicy(function () {
-        $this->directiveWithNonce('script-src', "'self'");
+        $this->directiveWithNonce('script-src', Keyword::Self);
     });
 
     expect((new CspCompiler)->compile($policy, 'abc123'))
@@ -36,8 +37,8 @@ test('it serialises a valueless directive', function () {
 
 test('it merges and de-duplicates repeated declarations of one directive', function () {
     $policy = new FakeCspPolicy(function () {
-        $this->directive('script-src', "'self'");
-        $this->directive('script-src', 'https://example.com', "'self'");
+        $this->directive('script-src', Keyword::Self);
+        $this->directive('script-src', 'https://example.com', Keyword::Self);
     });
 
     expect((new CspCompiler)->compile($policy, null))
@@ -46,7 +47,7 @@ test('it merges and de-duplicates repeated declarations of one directive', funct
 
 test('it throws when a required nonce is not supplied', function () {
     $policy = new FakeCspPolicy(function () {
-        $this->directiveWithNonce('script-src', "'self'");
+        $this->directiveWithNonce('script-src', Keyword::Self);
     });
 
     expect(fn () => (new CspCompiler)->compile($policy, null))
@@ -55,7 +56,7 @@ test('it throws when a required nonce is not supplied', function () {
 
 test('it ignores a nonce on a policy that does not request one', function () {
     $policy = new FakeCspPolicy(function () {
-        $this->directive('script-src', "'self'");
+        $this->directive('script-src', Keyword::Self);
     });
 
     expect((new CspCompiler)->compile($policy, 'abc123'))
@@ -82,7 +83,7 @@ test('it rejects a source that would break out of the header', function (string 
 
 test('it rejects a directive name that is not a valid token', function (string $name) {
     $policy = new FakeCspPolicy(function () use ($name) {
-        $this->directive($name, "'self'");
+        $this->directive($name, Keyword::Self);
     });
 
     expect(fn () => (new CspCompiler)->compile($policy, null))
@@ -96,7 +97,7 @@ test('it rejects a directive name that is not a valid token', function (string $
 
 test('it rejects a nonce that is not a valid token', function (string $nonce) {
     $policy = new FakeCspPolicy(function () {
-        $this->directiveWithNonce('script-src', "'self'");
+        $this->directiveWithNonce('script-src', Keyword::Self);
     });
 
     expect(fn () => (new CspCompiler)->compile($policy, $nonce))
@@ -111,7 +112,7 @@ test('it rejects a nonce that is not a valid token', function (string $nonce) {
 
 test('it accepts a base64 nonce with terminal padding', function () {
     $policy = new FakeCspPolicy(function () {
-        $this->directiveWithNonce('script-src', "'self'");
+        $this->directiveWithNonce('script-src', Keyword::Self);
     });
 
     expect((new CspCompiler)->compile($policy, 'YWJjMTIz=='))
