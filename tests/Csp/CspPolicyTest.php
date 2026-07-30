@@ -44,6 +44,14 @@ test('it rejects a nonce on a valueless directive', function () {
     expect(fn () => $policy->directives())->toThrow(InvalidCspDirective::class);
 });
 
+test('it rejects a nonce combined with none', function () {
+    $policy = new FakeCspPolicy(function () {
+        $this->directiveWithNonce('object-src', "'none'");
+    });
+
+    expect(fn () => $policy->directives())->toThrow(InvalidCspDirective::class);
+});
+
 test('it does not treat a failed definition as defined', function () {
     $calls = 0;
 

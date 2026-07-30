@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Estin92\SecurityHeaders\Csp\StrictPolicy;
+
 return [
 
     'auto_register' => env('SECURITY_HEADERS_AUTO_REGISTER', true),
@@ -33,6 +35,11 @@ return [
         'max_age' => env('SECURITY_HEADERS_HSTS_MAX_AGE', 31536000),
         'include_subdomains' => env('SECURITY_HEADERS_HSTS_INCLUDE_SUBDOMAINS', true),
         'preload' => env('SECURITY_HEADERS_HSTS_PRELOAD', false),
+    ],
+
+    'csp' => [
+        'enabled' => env('SECURITY_HEADERS_CSP_ENABLED', false),
+        'policy' => StrictPolicy::class,
     ],
 
 ];

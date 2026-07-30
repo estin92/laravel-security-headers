@@ -106,11 +106,13 @@ abstract class CspPolicy
     private function guardDirectives(): void
     {
         foreach ($this->directives ?? [] as $name => $sources) {
-            if (count($sources) > 1 && in_array("'none'", $sources, true)) {
+            $nonced = isset($this->nonced[$name]);
+
+            if (in_array("'none'", $sources, true) && (count($sources) > 1 || $nonced)) {
                 throw InvalidCspDirective::conflictingNone($name);
             }
 
-            if ($sources === [] && isset($this->nonced[$name])) {
+            if ($sources === [] && $nonced) {
                 throw InvalidCspDirective::sourcesOnValuelessDirective($name);
             }
         }
