@@ -1,0 +1,45 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Estin92\SecurityHeaders\Exceptions;
+
+use InvalidArgumentException;
+
+class InvalidCspDirective extends InvalidArgumentException
+{
+    public static function invalidName(string $name): self
+    {
+        return new self('Invalid CSP directive name: '.self::escape($name));
+    }
+
+    public static function invalidSource(string $source): self
+    {
+        return new self('Invalid CSP source: '.self::escape($source));
+    }
+
+    public static function invalidNonce(): self
+    {
+        return new self('The CSP nonce is not a valid token.');
+    }
+
+    public static function missingNonce(): self
+    {
+        return new self('The policy requires a nonce, but none was supplied.');
+    }
+
+    public static function conflictingNone(string $directive): self
+    {
+        return new self("The {$directive} directive cannot combine 'none' with other sources.");
+    }
+
+    public static function sourcesOnValuelessDirective(string $directive): self
+    {
+        return new self("The {$directive} directive cannot be both valueless and carry sources or a nonce.");
+    }
+
+    private static function escape(string $value): string
+    {
+        return (string) json_encode($value);
+    }
+}
