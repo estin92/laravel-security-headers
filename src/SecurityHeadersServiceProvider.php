@@ -18,16 +18,17 @@ class SecurityHeadersServiceProvider extends ServiceProvider
         );
     }
 
-    public function boot(): void
+    public function boot(Kernel $kernel): void
     {
         $this->publishes([
             __DIR__.'/../config/security-headers.php' => config_path('security-headers.php'),
         ], 'security-headers-config');
 
-        $this->app->afterResolving(Kernel::class, function (Kernel $kernel) {
-            if (config('security-headers.auto_register') === true) {
-                $kernel->pushMiddleware(ApplySecurityHeaders::class);
-            }
-        });
+        // Register on the kernel injected into boot. Do not use afterResolving():
+        // under traditional/FPM bootstrapping the kernel may already be resolved before
+        // this provider boots, so no later resolution occurs to fire the callback.
+        if (config('security-headers.auto_register') === true) {
+            $kernel->pushMiddleware(ApplySecurityHeaders::class);
+        }
     }
 }
