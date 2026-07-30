@@ -6,6 +6,7 @@ use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspPolicy;
 use Estin92\SecurityHeaders\Http\Middleware\ApplySecurityHeaders;
+use Estin92\SecurityHeaders\PermissionsPolicy\Allow;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Vite;
 
@@ -29,6 +30,28 @@ test('it applies the configured headers to the response', function () {
 
     $response->assertHeader('X-Frame-Options', 'DENY');
     $response->assertHeaderMissing('Referrer-Policy');
+});
+
+test('it applies the permissions-policy when enabled', function () {
+    config()->set('security-headers.permissions_policy', [
+        'enabled' => true,
+        'features' => [
+            'camera' => [],
+            'fullscreen' => [Allow::Self],
+        ],
+    ]);
+
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Permissions-Policy', 'camera=(), fullscreen=(self)');
+});
+
+test('it omits the permissions-policy when disabled', function () {
+    config()->set('security-headers.permissions_policy', ['enabled' => false, 'features' => ['camera' => []]]);
+
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeaderMissing('Permissions-Policy');
 });
 
 test('it applies strict-transport-security when hsts is enabled', function () {

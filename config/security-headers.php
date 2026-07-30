@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
+use Estin92\SecurityHeaders\PermissionsPolicy\Allow;
 
 return [
 
@@ -35,6 +36,31 @@ return [
         'max_age' => env('SECURITY_HEADERS_HSTS_MAX_AGE', 31536000),
         'include_subdomains' => env('SECURITY_HEADERS_HSTS_INCLUDE_SUBDOMAINS', true),
         'preload' => env('SECURITY_HEADERS_HSTS_PRELOAD', false),
+    ],
+
+    'permissions_policy' => [
+        'enabled' => env('SECURITY_HEADERS_PERMISSIONS_POLICY_ENABLED', true),
+        'features' => [
+            'accelerometer' => [],
+            'autoplay' => [],
+            'camera' => [],
+            'display-capture' => [],
+            'encrypted-media' => [],
+            'fullscreen' => [Allow::Self],
+            'geolocation' => [],
+            'gyroscope' => [],
+            'magnetometer' => [],
+            'microphone' => [],
+            'midi' => [],
+            'payment' => [],
+            'picture-in-picture' => [],
+            'publickey-credentials-create' => [Allow::Self],
+            'publickey-credentials-get' => [Allow::Self],
+            'screen-wake-lock' => [],
+            'serial' => [],
+            'usb' => [],
+            'xr-spatial-tracking' => [],
+        ],
     ],
 
     'csp' => [

@@ -10,6 +10,7 @@ use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\CspPolicyResolver;
 use Estin92\SecurityHeaders\Headers\Hsts;
 use Estin92\SecurityHeaders\Headers\SimpleHeaders;
+use Estin92\SecurityHeaders\PermissionsPolicy\PermissionsPolicyCompiler;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
@@ -43,6 +44,12 @@ class ApplySecurityHeaders
             $response->headers->set('Strict-Transport-Security', $hsts);
         }
 
+        $permissionsPolicy = $this->permissionsPolicy();
+
+        if ($permissionsPolicy !== null) {
+            $response->headers->set('Permissions-Policy', $permissionsPolicy);
+        }
+
         if ($policy !== null) {
             $response->headers->set(
                 'Content-Security-Policy',
@@ -65,6 +72,17 @@ class ApplySecurityHeaders
         $configured = config('security-headers.hsts');
 
         return new Hsts(is_array($configured) ? $configured : []);
+    }
+
+    private function permissionsPolicy(): ?string
+    {
+        if (config('security-headers.permissions_policy.enabled') !== true) {
+            return null;
+        }
+
+        $features = config('security-headers.permissions_policy.features');
+
+        return (new PermissionsPolicyCompiler)->compile(is_array($features) ? $features : []);
     }
 
     private function cspPolicy(): ?CspPolicy
