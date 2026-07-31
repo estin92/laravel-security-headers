@@ -6,17 +6,21 @@ namespace Estin92\SecurityHeaders\Http\Middleware;
 
 use Closure;
 use Estin92\SecurityHeaders\Coep\CoepCompiler;
+use Estin92\SecurityHeaders\Coep\CoepReporting;
 use Estin92\SecurityHeaders\Csp\CspCompiler;
 use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\CspPolicyResolver;
 use Estin92\SecurityHeaders\Csp\CspReporting;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
+use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
 use Estin92\SecurityHeaders\Headers\FlatHeaderCompiler;
 use Estin92\SecurityHeaders\Headers\HstsCompiler;
 use Estin92\SecurityHeaders\PermissionsPolicy\PermissionsPolicyCompiler;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpointsCompiler;
+use Estin92\SecurityHeaders\Reporting\ReportToCompiler;
+use Estin92\SecurityHeaders\Reporting\ReportToGroup;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
@@ -80,7 +84,7 @@ class ApplySecurityHeaders
         foreach ($coepChannels as $coep) {
             $response->headers->set(
                 $coep['header'],
-                (new CoepCompiler)->compile($coep['value'], $coep['endpoint']),
+                (new CoepCompiler)->compile($coep['value'], $coep['reporting']),
             );
         }
 
@@ -91,6 +95,15 @@ class ApplySecurityHeaders
 
         if ($reportingHeader !== null) {
             $response->headers->set('Reporting-Endpoints', $reportingHeader);
+        }
+
+        $groups = $this->reportToGroups(
+            ...array_column($channels, 'group'),
+            ...array_column($coepChannels, 'group'),
+        );
+
+        if ($groups !== []) {
+            $response->headers->set('Report-To', (new ReportToCompiler)->compile($groups));
         }
 
         return $response;
@@ -122,7 +135,7 @@ class ApplySecurityHeaders
     }
 
     /**
-     * @return array{policy: CspPolicy, reporting: ?CspReporting, endpoint: ?ReportingEndpoint, header: string}|null
+     * @return array{policy: CspPolicy, reporting: ?CspReporting, endpoint: ?ReportingEndpoint, group: ?array{key: string, group: ReportToGroup}, header: string}|null
      */
     private function resolveChannel(string $channel, string $header): ?array
     {
@@ -133,11 +146,16 @@ class ApplySecurityHeaders
         }
 
         $endpoint = $this->reportingEndpoint("csp.{$channel}");
+        $group = $this->reportToGroup("csp.{$channel}");
+        $legacy = $group['group'] ?? null;
 
         return [
             'policy' => $policy,
-            'reporting' => $endpoint !== null ? CspReporting::fromEndpoint($endpoint, $this->emitLegacy("csp.{$channel}")) : null,
+            'reporting' => $endpoint !== null || $legacy !== null
+                ? CspReporting::fromTargets($endpoint, $legacy, $this->emitLegacy("csp.{$channel}"))
+                : null,
             'endpoint' => $endpoint,
+            'group' => $group,
             'header' => $header,
         ];
     }
@@ -152,7 +170,7 @@ class ApplySecurityHeaders
     }
 
     /**
-     * @return array{value: mixed, endpoint: ?ReportingEndpoint, header: string}|null
+     * @return array{value: mixed, endpoint: ?ReportingEndpoint, reporting: ?CoepReporting, group: ?array{key: string, group: ReportToGroup}, header: string}|null
      */
     private function coepChannel(string $channel, string $header): ?array
     {
@@ -166,9 +184,14 @@ class ApplySecurityHeaders
             throw InvalidCoep::reportOnlyMissingEndpoint();
         }
 
+        $group = $this->reportToGroup("coep.{$channel}");
+        $legacy = $group['group'] ?? null;
+
         return [
             'value' => config("security-headers.coep.{$channel}.value"),
             'endpoint' => $endpoint,
+            'reporting' => $endpoint !== null || $legacy !== null ? CoepReporting::fromTargets($endpoint, $legacy) : null,
+            'group' => $group,
             'header' => $header,
         ];
     }
@@ -182,7 +205,7 @@ class ApplySecurityHeaders
         }
 
         if (! is_string($reference)) {
-            throw InvalidReportingEndpoint::invalidReference($configPath);
+            throw InvalidReportingEndpoint::invalidReference($configPath, $reference);
         }
 
         $registry = config('security-headers.reporting.endpoints');
@@ -203,6 +226,39 @@ class ApplySecurityHeaders
         );
     }
 
+    /**
+     * @return array{key: string, group: ReportToGroup}|null
+     */
+    private function reportToGroup(string $configPath): ?array
+    {
+        $reference = config("security-headers.{$configPath}.report_to_group");
+
+        if ($reference === null) {
+            return null;
+        }
+
+        if (! is_string($reference)) {
+            throw InvalidReportToGroup::invalidReference($configPath, $reference);
+        }
+
+        return ['key' => $reference, 'group' => $this->resolveGroup($reference)];
+    }
+
+    private function resolveGroup(string $reference): ReportToGroup
+    {
+        $registry = config('security-headers.reporting.report_to_groups');
+        $registry = is_array($registry) ? $registry : [];
+
+        if (! array_key_exists($reference, $registry)) {
+            throw InvalidReportToGroup::unknownGroup($reference);
+        }
+
+        $endpoints = config('security-headers.reporting.endpoints');
+        $endpoints = is_array($endpoints) ? $endpoints : [];
+
+        return ReportToGroup::fromConfig($reference, $registry[$reference], $endpoints);
+    }
+
     private function reportingEndpointsHeader(?ReportingEndpoint ...$endpoints): ?string
     {
         $unique = [];
@@ -218,5 +274,59 @@ class ApplySecurityHeaders
         }
 
         return (new ReportingEndpointsCompiler)->compile($unique);
+    }
+
+    /**
+     * @param  array{key: string, group: ReportToGroup}|null  ...$referenced
+     * @return array<string, ReportToGroup>
+     */
+    private function reportToGroups(?array ...$referenced): array
+    {
+        $byKey = [];
+
+        foreach ($referenced as $entry) {
+            if ($entry !== null) {
+                $byKey[$entry['key']] = $entry['group'];
+            }
+        }
+
+        foreach ($this->removalCandidates() as $key) {
+            if (! array_key_exists($key, $byKey)) {
+                $byKey[$key] = $this->resolveGroup($key);
+            }
+        }
+
+        $byName = [];
+
+        foreach ($byKey as $group) {
+            if (array_key_exists($group->group, $byName)) {
+                throw InvalidReportToGroup::duplicateEmittedName($group->group);
+            }
+
+            $byName[$group->group] = $group;
+        }
+
+        return $byName;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function removalCandidates(): array
+    {
+        $registry = config('security-headers.reporting.report_to_groups');
+        $registry = is_array($registry) ? $registry : [];
+
+        $keys = [];
+
+        foreach ($registry as $key => $definition) {
+            $maxAge = is_array($definition) ? ($definition['max_age'] ?? null) : null;
+
+            if (($maxAge === 0 || $maxAge === '0') && is_string($key)) {
+                $keys[] = $key;
+            }
+        }
+
+        return $keys;
     }
 }

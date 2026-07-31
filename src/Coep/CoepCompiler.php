@@ -7,11 +7,10 @@ namespace Estin92\SecurityHeaders\Coep;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidHeaderValue;
 use Estin92\SecurityHeaders\Headers\Coep;
-use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
 
 class CoepCompiler
 {
-    public function compile(mixed $value, ?ReportingEndpoint $endpoint = null): string
+    public function compile(mixed $value, ?CoepReporting $reporting = null): string
     {
         $coep = is_string($value) ? Coep::tryFrom($value) : null;
 
@@ -19,14 +18,14 @@ class CoepCompiler
             throw InvalidHeaderValue::notInValueSet('Cross-Origin-Embedder-Policy', is_string($value) ? $value : '');
         }
 
-        if ($coep === Coep::UnsafeNone && $endpoint !== null) {
+        if ($coep === Coep::UnsafeNone && $reporting !== null) {
             throw InvalidCoep::unsafeNoneWithReporting();
         }
 
-        if ($endpoint === null) {
+        if ($reporting === null) {
             return $coep->value;
         }
 
-        return "{$coep->value}; report-to=\"{$endpoint->name}\"";
+        return "{$coep->value}; report-to=\"{$reporting->reportTo}\"";
     }
 }

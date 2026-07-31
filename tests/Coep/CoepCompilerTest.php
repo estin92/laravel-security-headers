@@ -3,17 +3,21 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Coep\CoepCompiler;
+use Estin92\SecurityHeaders\Coep\CoepReporting;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidHeaderValue;
 use Estin92\SecurityHeaders\Headers\Coep;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
 
-function coepEndpoint(): ReportingEndpoint
+function coepReporting(): CoepReporting
 {
-    return ReportingEndpoint::fromConfig('coep', ['url' => 'https://a.example.com/coep']);
+    return CoepReporting::fromTargets(
+        ReportingEndpoint::fromConfig('coep', ['url' => 'https://a.example.com/coep']),
+        null,
+    );
 }
 
-test('it serialises each value with no endpoint', function (string $value) {
+test('it serialises each value with no reporting', function (string $value) {
     expect((new CoepCompiler)->compile($value))->toBe($value);
 })->with([
     'unsafe-none' => [Coep::UnsafeNone->value],
@@ -21,16 +25,16 @@ test('it serialises each value with no endpoint', function (string $value) {
     'credentialless' => [Coep::Credentialless->value],
 ]);
 
-test('it appends a quoted report-to parameter when an endpoint is given', function (string $value) {
-    expect((new CoepCompiler)->compile($value, coepEndpoint()))
+test('it appends a quoted report-to parameter when reporting is given', function (string $value) {
+    expect((new CoepCompiler)->compile($value, coepReporting()))
         ->toBe("{$value}; report-to=\"coep\"");
 })->with([
     'require-corp' => [Coep::RequireCorp->value],
     'credentialless' => [Coep::Credentialless->value],
 ]);
 
-test('it rejects unsafe-none paired with a reporting endpoint', function () {
-    expect(fn () => (new CoepCompiler)->compile(Coep::UnsafeNone->value, coepEndpoint()))
+test('it rejects unsafe-none paired with reporting', function () {
+    expect(fn () => (new CoepCompiler)->compile(Coep::UnsafeNone->value, coepReporting()))
         ->toThrow(InvalidCoep::class);
 });
 

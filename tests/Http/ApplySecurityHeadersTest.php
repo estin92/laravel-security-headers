@@ -8,6 +8,7 @@ use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
+use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
 use Estin92\SecurityHeaders\Http\Middleware\ApplySecurityHeaders;
 use Estin92\SecurityHeaders\PermissionsPolicy\Keyword;
 use Illuminate\Support\Facades\Route;
@@ -761,4 +762,262 @@ test('a skipped CSP channel contributes no Reporting-Endpoints entry but COEP st
     withViteHot(function () {
         expect($this->get('/probe')->headers->get('Reporting-Endpoints'))->toBe('coep="https://a.example.com/coep"');
     });
+});
+
+test('a CSP channel with a report_to_group emits report-to and a Report-To header', function () {
+    config()->set('security-headers.reporting.endpoints', ['security' => ['url' => 'https://a.example.com/modern', 'legacy_url' => 'https://a.example.com/legacy']]);
+    config()->set('security-headers.reporting.report_to_groups', ['security' => ['max_age' => 100, 'endpoints' => ['security']]]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'security', 'report_to_group' => 'security'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Content-Security-Policy'))->toContain('report-to security');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('security="https://a.example.com/modern"');
+    expect($response->headers->get('Report-To'))->toBe('{"group":"security","max_age":100,"endpoints":[{"url":"https://a.example.com/legacy"}]}');
+});
+
+test('a legacy-only CSP channel emits report-to via the group and no report-uri', function () {
+    config()->set('security-headers.reporting.endpoints', ['security' => ['url' => 'https://a.example.com/modern']]);
+    config()->set('security-headers.reporting.report_to_groups', ['security' => ['max_age' => 100, 'endpoints' => ['security']]]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'security'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Content-Security-Policy'))->toContain('report-to security');
+    expect($response->headers->get('Content-Security-Policy'))->not->toContain('report-uri');
+    $response->assertHeaderMissing('Reporting-Endpoints');
+    expect($response->headers->get('Report-To'))->toContain('"group":"security"');
+});
+
+test('a COEP channel with a report_to_group emits its quoted report-to and the Report-To header', function () {
+    config()->set('security-headers.reporting.endpoints', ['coep' => ['url' => 'https://a.example.com/coep']]);
+    config()->set('security-headers.reporting.report_to_groups', ['coep' => ['max_age' => 100, 'endpoints' => ['coep']]]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'report_to_group' => 'coep'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toBe('require-corp; report-to="coep"');
+    expect($response->headers->get('Report-To'))->toContain('"group":"coep"');
+});
+
+test('a dual COEP channel emits the quoted report-to, its modern endpoint, and the Report-To header together', function () {
+    config()->set('security-headers.reporting.endpoints', ['coep' => ['url' => 'https://a.example.com/coep', 'legacy_url' => 'https://a.example.com/coep-legacy']]);
+    config()->set('security-headers.reporting.report_to_groups', ['coep' => ['max_age' => 100, 'endpoints' => ['coep']]]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'coep', 'report_to_group' => 'coep'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toBe('require-corp; report-to="coep"');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('coep="https://a.example.com/coep"');
+    expect($response->headers->get('Report-To'))->toBe('{"group":"coep","max_age":100,"endpoints":[{"url":"https://a.example.com/coep-legacy"}]}');
+});
+
+test('CSP and COEP referencing the same group emit one de-duplicated Report-To', function () {
+    config()->set('security-headers.reporting.endpoints', ['security' => ['url' => 'https://a.example.com/m']]);
+    config()->set('security-headers.reporting.report_to_groups', ['security' => ['max_age' => 100, 'endpoints' => ['security']]]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'security'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'report_to_group' => 'security'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $header = $this->get('/probe')->headers->get('Report-To');
+
+    expect(substr_count($header, '"group":"security"'))->toBe(1);
+});
+
+test('a removal group is emitted even when unreferenced', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['retire' => ['group' => 'old', 'max_age' => 0, 'endpoints' => ['e']]]);
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => false, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    expect($this->get('/probe')->headers->get('Report-To'))->toContain('"group":"old","max_age":0');
+});
+
+test('it replaces a pre-existing Report-To header rather than appending', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['retire' => ['group' => 'old', 'max_age' => 0, 'endpoints' => ['e']]]);
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => false, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', function () {
+        return response('ok')->header('Report-To', 'stale');
+    });
+    $response = $this->get('/probe');
+
+    expect($response->headers->all('report-to'))->toHaveCount(1);
+    expect($response->headers->get('Report-To'))->not->toContain('stale');
+});
+
+test('collision and coherence rules fail loudly', function (Closure $configure) {
+    $configure();
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportToGroup::class);
+})->with([
+    'channel modern+legacy names differ' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['a' => ['url' => 'https://a.example.com/a'], 'b' => ['url' => 'https://a.example.com/b']]);
+        config()->set('security-headers.reporting.report_to_groups', ['b' => ['max_age' => 100, 'endpoints' => ['b']]]);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'a', 'report_to_group' => 'b'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    }],
+    'two active entries emit the same name' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+        config()->set('security-headers.reporting.report_to_groups', [
+            'g1' => ['group' => 'dup', 'max_age' => 100, 'endpoints' => ['e']],
+            'g2' => ['group' => 'dup', 'max_age' => 200, 'endpoints' => ['e']],
+        ]);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'g1'], 'report_only' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'g2']]);
+    }],
+    'two removal entries emit the same name' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+        config()->set('security-headers.reporting.report_to_groups', [
+            'r1' => ['group' => 'dup', 'max_age' => 0, 'endpoints' => ['e']],
+            'r2' => ['group' => 'dup', 'max_age' => 0, 'endpoints' => ['e']],
+        ]);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => false, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    }],
+    'active and removal emit the same name' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+        config()->set('security-headers.reporting.report_to_groups', [
+            'active' => ['group' => 'dup', 'max_age' => 100, 'endpoints' => ['e']],
+            'retire' => ['group' => 'dup', 'max_age' => 0, 'endpoints' => ['e']],
+        ]);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'active'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    }],
+    'channel references a removal group' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+        config()->set('security-headers.reporting.report_to_groups', ['retire' => ['group' => 'retire', 'max_age' => 0, 'endpoints' => ['e']]]);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'retire'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    }],
+    'channel references an unknown group' => [function () {
+        config()->set('security-headers.reporting.report_to_groups', []);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'ghost'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    }],
+    'malformed removal candidate' => [function () {
+        config()->set('security-headers.reporting.report_to_groups', ['retire' => ['group' => 'old', 'max_age' => 0, 'endpoints' => []]]);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => false, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    }],
+]);
+
+test('a dormant malformed positive group does not fail the request', function () {
+    config()->set('security-headers.reporting.report_to_groups', ['dormant' => ['max_age' => 100, 'endpoints' => []]]);
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Content-Security-Policy');
+});
+
+test('a non-canonical max_age is not mistaken for a removal candidate and stays dormant', function (mixed $maxAge) {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['dormant' => ['group' => 'x', 'max_age' => $maxAge, 'endpoints' => []]]);
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Content-Security-Policy');
+})->with([
+    'float-string zero' => ['0.0'],
+    'float zero' => [0.0],
+    'false' => [false],
+    'empty string' => [''],
+]);
+
+test('a disabled channel with a dangling report_to_group is ignored', function (mixed $reference) {
+    config()->set('security-headers.reporting.report_to_groups', []);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class, 'report_to_group' => $reference],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Content-Security-Policy');
+})->with([
+    'dangling' => ['ghost'],
+    'non-string' => [['not', 'a', 'string']],
+]);
+
+test('an active channel with a non-string report_to_group fails loudly', function () {
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => ['not', 'a', 'string']],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportToGroup::class);
+});
+
+test('a disabled COEP channel with a dangling report_to_group is ignored', function (mixed $reference) {
+    config()->set('security-headers.reporting.report_to_groups', []);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => false, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp', 'report_to_group' => $reference],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeaderMissing('Report-To');
+})->with([
+    'dangling' => ['ghost'],
+    'non-string' => [['not', 'a', 'string']],
+]);
+
+test('an active COEP channel with a non-string report_to_group fails loudly', function () {
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'report_to_group' => ['not', 'a', 'string']],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportToGroup::class);
+});
+
+test('vite-hot skipped CSP is never resolved while COEP and removals still emit', function () {
+    config()->set('security-headers.reporting.endpoints', ['coep' => ['url' => 'https://a.example.com/coep'], 'r' => ['url' => 'https://a.example.com/r']]);
+    config()->set('security-headers.reporting.report_to_groups', [
+        'coep' => ['max_age' => 100, 'endpoints' => ['coep']],
+        'retire' => ['group' => 'old', 'max_age' => 0, 'endpoints' => ['r']],
+    ]);
+    config()->set('security-headers.csp', [
+        'skip_when_vite_hot' => true,
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'ghost'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'report_to_group' => 'coep'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    withViteHot(function () {
+        $response = $this->get('/probe');
+        $response->assertHeaderMissing('Content-Security-Policy');
+        $header = $response->headers->get('Report-To');
+        expect($header)->not->toContain('"group":"ghost"');
+        expect($header)->toContain('"group":"coep"');
+        expect($header)->toContain('"group":"old","max_age":0');
+    });
+});
+
+test('a non-array report_to_groups registry is handled defensively', function () {
+    config()->set('security-headers.reporting.report_to_groups', 'not-an-array');
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Content-Security-Policy');
+    $this->get('/probe')->assertHeaderMissing('Report-To');
 });

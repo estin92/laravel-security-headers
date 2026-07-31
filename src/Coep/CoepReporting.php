@@ -2,20 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Estin92\SecurityHeaders\Csp;
+namespace Estin92\SecurityHeaders\Coep;
 
 use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
 use Estin92\SecurityHeaders\Reporting\ReportToGroup;
 
-final readonly class CspReporting
+final readonly class CoepReporting
 {
     private function __construct(
         public string $reportTo,
-        public ?string $reportUri,
     ) {}
 
-    public static function fromTargets(?ReportingEndpoint $modern, ?ReportToGroup $legacy, bool $emitReportUri): self
+    public static function fromTargets(?ReportingEndpoint $modern, ?ReportToGroup $legacy): self
     {
         if ($legacy !== null && $legacy->isRemoval()) {
             throw InvalidReportToGroup::removalGroupNotAddressable($legacy->group);
@@ -29,9 +28,6 @@ final readonly class CspReporting
             throw InvalidReportToGroup::noReportingTarget();
         }
 
-        return new self(
-            $modern !== null ? $modern->name : $legacy->group,
-            $modern !== null && $emitReportUri ? $modern->reportUri() : null,
-        );
+        return new self($modern !== null ? $modern->name : $legacy->group);
     }
 }

@@ -134,7 +134,7 @@ test('it appends report-to and report-uri after the policy directives', function
     });
 
     $endpoint = ReportingEndpoint::fromConfig('csp-enforce', ['url' => 'https://a.example.com/r']);
-    $reporting = CspReporting::fromEndpoint($endpoint, true);
+    $reporting = CspReporting::fromTargets($endpoint, null, true);
 
     expect((new CspCompiler)->compile($policy, null, $reporting))
         ->toBe("default-src 'self'; report-to csp-enforce; report-uri https://a.example.com/r");
@@ -146,7 +146,7 @@ test('it appends only report-to when legacy emission is off', function () {
     });
 
     $endpoint = ReportingEndpoint::fromConfig('csp-enforce', ['url' => 'https://a.example.com/r']);
-    $reporting = CspReporting::fromEndpoint($endpoint, false);
+    $reporting = CspReporting::fromTargets($endpoint, null, false);
 
     expect((new CspCompiler)->compile($policy, null, $reporting))
         ->toBe("default-src 'self'; report-to csp-enforce");

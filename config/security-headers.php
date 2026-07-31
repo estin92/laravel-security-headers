@@ -79,6 +79,8 @@ return [
             'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY', 'require-corp'),
             // Optional: the name of a reporting.endpoints entry, e.g. 'coep'.
             'reporting_endpoint' => null,
+            // Optional: the name of a reporting.report_to_groups entry (legacy Report-To).
+            'report_to_group' => null,
         ],
         'report_only' => [
             'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY_REPORT_ONLY_ENABLED', false),
@@ -86,6 +88,8 @@ return [
             // The name of a reporting.endpoints entry, e.g. 'coep'. Required when this
             // channel is enabled — a report-only header without an endpoint reports nothing.
             'reporting_endpoint' => null,
+            // Optional: the name of a reporting.report_to_groups entry (legacy Report-To).
+            'report_to_group' => null,
         ],
     ],
 
@@ -94,10 +98,14 @@ return [
         'enforce' => [
             'enabled' => env('SECURITY_HEADERS_CSP_ENABLED', false),
             'policy' => StrictPolicy::class,
+            // Optional: the name of a reporting.report_to_groups entry (legacy Report-To).
+            'report_to_group' => null,
         ],
         'report_only' => [
             'enabled' => env('SECURITY_HEADERS_CSP_REPORT_ONLY_ENABLED', false),
             'policy' => StrictPolicy::class,
+            // Optional: the name of a reporting.report_to_groups entry (legacy Report-To).
+            'report_to_group' => null,
         ],
     ],
 
@@ -106,6 +114,17 @@ return [
             // 'csp' => [
             //     'url' => 'https://example.com/csp',
             //     'legacy_url' => 'https://example.com/csp-legacy',   // optional
+            // ],
+        ],
+
+        'report_to_groups' => [
+            // Each key identifies a Report-To group definition. The emitted group
+            // name defaults to that key and may be overridden with `group`.
+            // Group endpoints are reporting.endpoints keys; the legacy_url (or url) is emitted.
+            // 'security' => [
+            //     'max_age' => 10_886_400,
+            //     'include_subdomains' => true,
+            //     'endpoints' => ['security'],
             // ],
         ],
     ],

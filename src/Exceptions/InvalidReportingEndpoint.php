@@ -14,9 +14,9 @@ class InvalidReportingEndpoint extends InvalidArgumentException
         return new self('No reporting endpoint is registered under the name: '.MessageValue::escape($name));
     }
 
-    public static function invalidReference(string $channel): self
+    public static function invalidReference(string $configPath, mixed $value): self
     {
-        return new self("The {$channel} channel's reporting_endpoint must be a string or absent.");
+        return new self('The '.MessageValue::escape($configPath).' reporting_endpoint must be a string or absent, got: '.MessageValue::escape(is_scalar($value) ? (string) $value : gettype($value)));
     }
 
     public static function malformedUrl(string $url): self
