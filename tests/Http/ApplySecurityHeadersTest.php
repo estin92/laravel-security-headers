@@ -6,6 +6,7 @@ use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\Keyword as CspKeyword;
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspPolicy;
+use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
 use Estin92\SecurityHeaders\Http\Middleware\ApplySecurityHeaders;
 use Estin92\SecurityHeaders\PermissionsPolicy\Keyword;
 use Illuminate\Support\Facades\Route;
@@ -323,4 +324,179 @@ test('it does not mint a nonce for a policy that does not need one', function ()
     $response = $this->get('/probe');
 
     expect($response->headers->get('Content-Security-Policy'))->not->toContain('nonce-');
+});
+
+test('a channel with no reporting endpoint emits no reporting directives', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'csp' => ['url' => 'https://a.example.com/r'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Content-Security-Policy'))->not->toContain('report-to');
+    expect($response->headers->get('Content-Security-Policy'))->not->toContain('report-uri');
+    $response->assertHeaderMissing('Reporting-Endpoints');
+});
+
+test('an enforce channel referencing an endpoint emits report-to, report-uri and the Reporting-Endpoints header', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'csp-enforce' => ['url' => 'https://a.example.com/e'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => [
+            'enabled' => true,
+            'policy' => StrictPolicy::class,
+            'reporting_endpoint' => 'csp-enforce',
+            'emit_legacy_report_uri' => true,
+        ],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    $csp = $response->headers->get('Content-Security-Policy');
+    expect($csp)->toContain('report-to csp-enforce');
+    expect($csp)->toContain('report-uri https://a.example.com/e');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('csp-enforce="https://a.example.com/e"');
+});
+
+test('emit_legacy_report_uri false suppresses report-uri but keeps report-to', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'csp-enforce' => ['url' => 'https://a.example.com/e'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => [
+            'enabled' => true,
+            'policy' => StrictPolicy::class,
+            'reporting_endpoint' => 'csp-enforce',
+            'emit_legacy_report_uri' => false,
+        ],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $csp = $this->get('/probe')->headers->get('Content-Security-Policy');
+
+    expect($csp)->toContain('report-to csp-enforce');
+    expect($csp)->not->toContain('report-uri');
+});
+
+test('legacy_url overrides the report-uri value', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'csp-enforce' => ['url' => 'https://a.example.com/e', 'legacy_url' => 'https://legacy.example.com/e'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => [
+            'enabled' => true,
+            'policy' => StrictPolicy::class,
+            'reporting_endpoint' => 'csp-enforce',
+            'emit_legacy_report_uri' => true,
+        ],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Content-Security-Policy'))->toContain('report-uri https://legacy.example.com/e');
+    expect($response->headers->get('Reporting-Endpoints'))->toContain('"https://a.example.com/e"');
+});
+
+test('two channels referencing the same endpoint produce one de-duplicated Reporting-Endpoints entry', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'shared' => ['url' => 'https://a.example.com/shared'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'shared'],
+        'report_only' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'shared'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Content-Security-Policy'))->toContain('report-to shared');
+    expect($response->headers->get('Content-Security-Policy-Report-Only'))->toContain('report-to shared');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('shared="https://a.example.com/shared"');
+});
+
+test('it replaces a pre-existing Reporting-Endpoints header rather than appending', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'csp-enforce' => ['url' => 'https://a.example.com/e'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'csp-enforce'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', function () {
+        return response('ok')->header('Reporting-Endpoints', 'stale="https://old.example.com/x"');
+    });
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('csp-enforce="https://a.example.com/e"');
+    expect($response->headers->all('reporting-endpoints'))->toHaveCount(1);
+});
+
+test('two channels referencing different endpoints produce two Reporting-Endpoints entries', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'e-enforce' => ['url' => 'https://a.example.com/e'],
+        'e-candidate' => ['url' => 'https://b.example.com/c'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'e-enforce'],
+        'report_only' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'e-candidate'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $header = $this->get('/probe')->headers->get('Reporting-Endpoints');
+
+    expect($header)->toContain('e-enforce="https://a.example.com/e"');
+    expect($header)->toContain('e-candidate="https://b.example.com/c"');
+});
+
+test('no active channel references an endpoint means no Reporting-Endpoints header even when endpoints are declared', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'unused' => ['url' => 'https://a.example.com/r'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeaderMissing('Reporting-Endpoints');
+});
+
+test('an active channel with a dangling reference fails loudly', function () {
+    config()->set('security-headers.reporting.endpoints', []);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'ghost'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportingEndpoint::class);
+});
+
+test('a disabled channel with a dangling reference is ignored at runtime', function () {
+    config()->set('security-headers.reporting.endpoints', []);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'ghost'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Content-Security-Policy');
+});
+
+test('an active channel with a non-string reporting_endpoint fails loudly', function () {
+    config()->set('security-headers.reporting.endpoints', []);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => ['not', 'a', 'string']],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportingEndpoint::class);
 });

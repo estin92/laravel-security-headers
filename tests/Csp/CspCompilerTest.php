@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Csp\CspCompiler;
+use Estin92\SecurityHeaders\Csp\CspReporting;
 use Estin92\SecurityHeaders\Csp\Keyword;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspDirective;
+use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
 use Estin92\SecurityHeaders\Tests\Csp\FakeCspPolicy;
 
 test('it serialises directives into a policy string', function () {
@@ -124,4 +126,37 @@ test('it accepts a base64 nonce with terminal padding', function () {
 
     expect((new CspCompiler)->compile($policy, 'YWJjMTIz=='))
         ->toBe("script-src 'self' 'nonce-YWJjMTIz=='");
+});
+
+test('it appends report-to and report-uri after the policy directives', function () {
+    $policy = new FakeCspPolicy(function () {
+        $this->directive('default-src', Keyword::Self);
+    });
+
+    $endpoint = ReportingEndpoint::fromConfig('csp-enforce', ['url' => 'https://a.example.com/r']);
+    $reporting = CspReporting::fromEndpoint($endpoint, true);
+
+    expect((new CspCompiler)->compile($policy, null, $reporting))
+        ->toBe("default-src 'self'; report-to csp-enforce; report-uri https://a.example.com/r");
+});
+
+test('it appends only report-to when legacy emission is off', function () {
+    $policy = new FakeCspPolicy(function () {
+        $this->directive('default-src', Keyword::Self);
+    });
+
+    $endpoint = ReportingEndpoint::fromConfig('csp-enforce', ['url' => 'https://a.example.com/r']);
+    $reporting = CspReporting::fromEndpoint($endpoint, false);
+
+    expect((new CspCompiler)->compile($policy, null, $reporting))
+        ->toBe("default-src 'self'; report-to csp-enforce");
+});
+
+test('it appends no reporting directives when reporting is null', function () {
+    $policy = new FakeCspPolicy(function () {
+        $this->directive('default-src', Keyword::Self);
+    });
+
+    expect((new CspCompiler)->compile($policy, null, null))
+        ->toBe("default-src 'self'");
 });

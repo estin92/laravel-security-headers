@@ -12,6 +12,7 @@ uses(TestCase::class)->in(
     __DIR__.'/Csp',
     __DIR__.'/Headers',
     __DIR__.'/PermissionsPolicy',
+    __DIR__.'/Reporting',
     __DIR__.'/AutoRegistrationTest.php',
     __DIR__.'/ServiceProviderTest.php',
 );

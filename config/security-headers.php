@@ -89,4 +89,13 @@ return [
         ],
     ],
 
+    'reporting' => [
+        'endpoints' => [
+            // 'csp' => [
+            //     'url' => 'https://example.com/csp',
+            //     'legacy_url' => 'https://example.com/csp-legacy',   // optional
+            // ],
+        ],
+    ],
+
 ];

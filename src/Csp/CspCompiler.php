@@ -8,7 +8,7 @@ use Estin92\SecurityHeaders\Exceptions\InvalidCspDirective;
 
 class CspCompiler
 {
-    public function compile(CspPolicy $policy, ?string $nonce): string
+    public function compile(CspPolicy $policy, ?string $nonce, ?CspReporting $reporting = null): string
     {
         if ($policy->requiresNonce() && $nonce === null) {
             throw InvalidCspDirective::missingNonce();
@@ -32,6 +32,14 @@ class CspCompiler
             }
 
             $parts[] = trim($name.' '.implode(' ', $sources));
+        }
+
+        if ($reporting !== null) {
+            $parts[] = "report-to {$reporting->reportTo}";
+
+            if ($reporting->reportUri !== null) {
+                $parts[] = "report-uri {$reporting->reportUri}";
+            }
         }
 
         return implode('; ', $parts);

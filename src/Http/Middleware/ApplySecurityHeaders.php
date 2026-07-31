@@ -8,9 +8,13 @@ use Closure;
 use Estin92\SecurityHeaders\Csp\CspCompiler;
 use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\CspPolicyResolver;
+use Estin92\SecurityHeaders\Csp\CspReporting;
+use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
 use Estin92\SecurityHeaders\Headers\FlatHeaderCompiler;
 use Estin92\SecurityHeaders\Headers\HstsCompiler;
 use Estin92\SecurityHeaders\PermissionsPolicy\PermissionsPolicyCompiler;
+use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
+use Estin92\SecurityHeaders\Reporting\ReportingEndpointsCompiler;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,11 +26,16 @@ class ApplySecurityHeaders
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $enforce = $this->cspChannel('enforce');
-        $reportOnly = $this->cspChannel('report_only');
+        $channels = array_filter([
+            $this->resolveChannel('enforce', 'Content-Security-Policy'),
+            $this->resolveChannel('report_only', 'Content-Security-Policy-Report-Only'),
+        ]);
 
-        $requiresNonce = $enforce?->requiresNonce() === true
-            || $reportOnly?->requiresNonce() === true;
+        $requiresNonce = false;
+
+        foreach ($channels as $channel) {
+            $requiresNonce = $requiresNonce || $channel['policy']->requiresNonce();
+        }
 
         if ($requiresNonce) {
             Vite::useCspNonce();
@@ -52,18 +61,19 @@ class ApplySecurityHeaders
             $response->headers->set('Permissions-Policy', $permissionsPolicy);
         }
 
-        if ($enforce !== null) {
+        foreach ($channels as $channel) {
             $response->headers->set(
-                'Content-Security-Policy',
-                (new CspCompiler)->compile($enforce, $nonce),
+                $channel['header'],
+                (new CspCompiler)->compile($channel['policy'], $nonce, $channel['reporting']),
             );
         }
 
-        if ($reportOnly !== null) {
-            $response->headers->set(
-                'Content-Security-Policy-Report-Only',
-                (new CspCompiler)->compile($reportOnly, $nonce),
-            );
+        $reportingHeader = $this->reportingEndpointsHeader(
+            ...array_column($channels, 'endpoint'),
+        );
+
+        if ($reportingHeader !== null) {
+            $response->headers->set('Reporting-Endpoints', $reportingHeader);
         }
 
         return $response;
@@ -94,6 +104,27 @@ class ApplySecurityHeaders
         return (new PermissionsPolicyCompiler)->compile(is_array($features) ? $features : []);
     }
 
+    /**
+     * @return array{policy: CspPolicy, reporting: ?CspReporting, endpoint: ?ReportingEndpoint, header: string}|null
+     */
+    private function resolveChannel(string $channel, string $header): ?array
+    {
+        $policy = $this->cspChannel($channel);
+
+        if ($policy === null) {
+            return null;
+        }
+
+        $endpoint = $this->reportingEndpoint($channel);
+
+        return [
+            'policy' => $policy,
+            'reporting' => $endpoint !== null ? CspReporting::fromEndpoint($endpoint, $this->emitLegacy($channel)) : null,
+            'endpoint' => $endpoint,
+            'header' => $header,
+        ];
+    }
+
     private function cspChannel(string $channel): ?CspPolicy
     {
         if (config("security-headers.csp.{$channel}.enabled") !== true) {
@@ -101,5 +132,52 @@ class ApplySecurityHeaders
         }
 
         return app(CspPolicyResolver::class)->resolve(config("security-headers.csp.{$channel}.policy"));
+    }
+
+    private function reportingEndpoint(string $channel): ?ReportingEndpoint
+    {
+        $reference = config("security-headers.csp.{$channel}.reporting_endpoint");
+
+        if ($reference === null) {
+            return null;
+        }
+
+        if (! is_string($reference)) {
+            throw InvalidReportingEndpoint::invalidReference($channel);
+        }
+
+        $registry = config('security-headers.reporting.endpoints');
+        $registry = is_array($registry) ? $registry : [];
+
+        if (! array_key_exists($reference, $registry)) {
+            throw InvalidReportingEndpoint::unknownReference($reference);
+        }
+
+        return ReportingEndpoint::fromConfig($reference, $registry[$reference]);
+    }
+
+    private function emitLegacy(string $channel): bool
+    {
+        return filter_var(
+            config("security-headers.csp.{$channel}.emit_legacy_report_uri", true),
+            FILTER_VALIDATE_BOOL,
+        );
+    }
+
+    private function reportingEndpointsHeader(?ReportingEndpoint ...$endpoints): ?string
+    {
+        $unique = [];
+
+        foreach ($endpoints as $endpoint) {
+            if ($endpoint !== null) {
+                $unique[$endpoint->name] = $endpoint;
+            }
+        }
+
+        if ($unique === []) {
+            return null;
+        }
+
+        return (new ReportingEndpointsCompiler)->compile($unique);
     }
 }
