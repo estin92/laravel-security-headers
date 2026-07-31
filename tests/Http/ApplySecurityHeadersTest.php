@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\Keyword as CspKeyword;
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
+use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
 use Estin92\SecurityHeaders\Http\Middleware\ApplySecurityHeaders;
@@ -499,4 +500,265 @@ test('an active channel with a non-string reporting_endpoint fails loudly', func
     $this->withoutExceptionHandling();
 
     expect(fn () => $this->get('/probe'))->toThrow(InvalidReportingEndpoint::class);
+});
+
+test('COEP enforce without an endpoint emits a plain header', function () {
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toBe('require-corp');
+    $response->assertHeaderMissing('Reporting-Endpoints');
+});
+
+test('COEP enforce with an endpoint emits report-to and the Reporting-Endpoints header', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'coep' => ['url' => 'https://a.example.com/coep'],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'coep'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toBe('require-corp; report-to="coep"');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('coep="https://a.example.com/coep"');
+});
+
+test('COEP report-only emits the distinct report-only header and its Reporting-Endpoints entry', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'coep-audit' => ['url' => 'https://a.example.com/coep-audit'],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => false, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'coep-audit'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Embedder-Policy-Report-Only'))->toBe('require-corp; report-to="coep-audit"');
+    $response->assertHeaderMissing('Cross-Origin-Embedder-Policy');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('coep-audit="https://a.example.com/coep-audit"');
+});
+
+test('both COEP channels enabled emit both distinct headers', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'coep-e' => ['url' => 'https://a.example.com/e'],
+        'coep-r' => ['url' => 'https://a.example.com/r'],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'coep-e'],
+        'report_only' => ['enabled' => true, 'value' => 'credentialless', 'reporting_endpoint' => 'coep-r'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toBe('require-corp; report-to="coep-e"');
+    expect($response->headers->get('Cross-Origin-Embedder-Policy-Report-Only'))->toBe('credentialless; report-to="coep-r"');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('coep-e="https://a.example.com/e", coep-r="https://a.example.com/r"');
+});
+
+test('unsafe-none COEP paired with an endpoint fails loudly through the middleware', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'coep' => ['url' => 'https://a.example.com/coep'],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'unsafe-none', 'reporting_endpoint' => 'coep'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidCoep::class);
+});
+
+test('an enabled report-only COEP channel with no endpoint fails loudly', function () {
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => false, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => true, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidCoep::class);
+});
+
+test('an active COEP channel with a dangling endpoint reference fails loudly', function () {
+    config()->set('security-headers.reporting.endpoints', []);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'ghost'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportingEndpoint::class);
+});
+
+test('an active COEP channel with a non-string endpoint reference fails loudly', function () {
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => ['not', 'a', 'string']],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportingEndpoint::class);
+});
+
+test('a disabled COEP channel with a dangling or non-string reference is ignored', function (mixed $reference) {
+    config()->set('security-headers.reporting.endpoints', []);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp', 'reporting_endpoint' => $reference],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Cross-Origin-Embedder-Policy');
+})->with([
+    'dangling' => ['ghost'],
+    'non-string' => [['not', 'a', 'string']],
+]);
+
+test('CSP and COEP naming the same endpoint produce one de-duplicated Reporting-Endpoints entry', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'shared' => ['url' => 'https://a.example.com/shared'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'shared'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'shared'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Content-Security-Policy'))->toContain('report-to shared');
+    expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toContain('report-to="shared"');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('shared="https://a.example.com/shared"');
+});
+
+test('CSP and COEP naming different endpoints produce two ordered Reporting-Endpoints entries', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'csp' => ['url' => 'https://a.example.com/csp'],
+        'coep' => ['url' => 'https://a.example.com/coep'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'csp'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'coep'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $header = $this->get('/probe')->headers->get('Reporting-Endpoints');
+
+    expect($header)->toBe('csp="https://a.example.com/csp", coep="https://a.example.com/coep"');
+});
+
+function withViteHot(callable $body): void
+{
+    $hotFile = Vite::hotFile();
+    $existed = is_file($hotFile);
+    $previous = null;
+
+    if ($existed) {
+        $previous = file_get_contents($hotFile);
+
+        if ($previous === false) {
+            throw new RuntimeException("Could not read Vite hot file: {$hotFile}");
+        }
+    }
+
+    if (file_put_contents($hotFile, 'http://localhost:5173') === false) {
+        throw new RuntimeException("Could not write Vite hot file: {$hotFile}");
+    }
+
+    try {
+        $body();
+    } finally {
+        if ($existed && $previous !== null) {
+            file_put_contents($hotFile, $previous);
+        } elseif (! $existed) {
+            unlink($hotFile);
+        }
+    }
+}
+
+test('when vite is hot and the flag is on, CSP is skipped, no nonce is minted, COEP and flat headers remain', function () {
+    config()->set('security-headers.headers', [
+        'x_frame_options' => ['enabled' => true, 'value' => 'DENY'],
+    ]);
+    config()->set('security-headers.csp', [
+        'skip_when_vite_hot' => true,
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    withViteHot(function () {
+        $response = $this->get('/probe');
+
+        $response->assertHeaderMissing('Content-Security-Policy');
+        $response->assertHeaderMissing('Content-Security-Policy-Report-Only');
+        expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toBe('require-corp');
+        expect($response->headers->get('X-Frame-Options'))->toBe('DENY');
+        expect(Vite::cspNonce())->toBeNull();
+    });
+});
+
+test('when vite is hot but the flag is off, CSP still emits', function () {
+    config()->set('security-headers.csp', [
+        'skip_when_vite_hot' => false,
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    withViteHot(function () {
+        $this->get('/probe')->assertHeader('Content-Security-Policy');
+    });
+});
+
+test('when vite is not hot, CSP emits normally', function () {
+    config()->set('security-headers.csp', [
+        'skip_when_vite_hot' => true,
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeader('Content-Security-Policy');
+});
+
+test('a skipped CSP channel contributes no Reporting-Endpoints entry but COEP still does', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'csp' => ['url' => 'https://a.example.com/csp'],
+        'coep' => ['url' => 'https://a.example.com/coep'],
+    ]);
+    config()->set('security-headers.csp', [
+        'skip_when_vite_hot' => true,
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'csp'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'coep'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    withViteHot(function () {
+        expect($this->get('/probe')->headers->get('Reporting-Endpoints'))->toBe('coep="https://a.example.com/coep"');
+    });
 });

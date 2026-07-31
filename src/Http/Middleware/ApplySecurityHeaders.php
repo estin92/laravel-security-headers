@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Estin92\SecurityHeaders\Http\Middleware;
 
 use Closure;
+use Estin92\SecurityHeaders\Coep\CoepCompiler;
 use Estin92\SecurityHeaders\Csp\CspCompiler;
 use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\CspPolicyResolver;
 use Estin92\SecurityHeaders\Csp\CspReporting;
+use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
 use Estin92\SecurityHeaders\Headers\FlatHeaderCompiler;
 use Estin92\SecurityHeaders\Headers\HstsCompiler;
@@ -26,9 +28,16 @@ class ApplySecurityHeaders
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $channels = array_filter([
+        $skipCsp = config('security-headers.csp.skip_when_vite_hot') === true && Vite::isRunningHot();
+
+        $channels = $skipCsp ? [] : array_filter([
             $this->resolveChannel('enforce', 'Content-Security-Policy'),
             $this->resolveChannel('report_only', 'Content-Security-Policy-Report-Only'),
+        ]);
+
+        $coepChannels = array_filter([
+            $this->coepChannel('enforce', 'Cross-Origin-Embedder-Policy'),
+            $this->coepChannel('report_only', 'Cross-Origin-Embedder-Policy-Report-Only'),
         ]);
 
         $requiresNonce = false;
@@ -68,8 +77,16 @@ class ApplySecurityHeaders
             );
         }
 
+        foreach ($coepChannels as $coep) {
+            $response->headers->set(
+                $coep['header'],
+                (new CoepCompiler)->compile($coep['value'], $coep['endpoint']),
+            );
+        }
+
         $reportingHeader = $this->reportingEndpointsHeader(
             ...array_column($channels, 'endpoint'),
+            ...array_column($coepChannels, 'endpoint'),
         );
 
         if ($reportingHeader !== null) {
@@ -115,11 +132,11 @@ class ApplySecurityHeaders
             return null;
         }
 
-        $endpoint = $this->reportingEndpoint($channel);
+        $endpoint = $this->reportingEndpoint("csp.{$channel}");
 
         return [
             'policy' => $policy,
-            'reporting' => $endpoint !== null ? CspReporting::fromEndpoint($endpoint, $this->emitLegacy($channel)) : null,
+            'reporting' => $endpoint !== null ? CspReporting::fromEndpoint($endpoint, $this->emitLegacy("csp.{$channel}")) : null,
             'endpoint' => $endpoint,
             'header' => $header,
         ];
@@ -134,16 +151,38 @@ class ApplySecurityHeaders
         return app(CspPolicyResolver::class)->resolve(config("security-headers.csp.{$channel}.policy"));
     }
 
-    private function reportingEndpoint(string $channel): ?ReportingEndpoint
+    /**
+     * @return array{value: mixed, endpoint: ?ReportingEndpoint, header: string}|null
+     */
+    private function coepChannel(string $channel, string $header): ?array
     {
-        $reference = config("security-headers.csp.{$channel}.reporting_endpoint");
+        if (config("security-headers.coep.{$channel}.enabled") !== true) {
+            return null;
+        }
+
+        $endpoint = $this->reportingEndpoint("coep.{$channel}");
+
+        if ($channel === 'report_only' && $endpoint === null) {
+            throw InvalidCoep::reportOnlyMissingEndpoint();
+        }
+
+        return [
+            'value' => config("security-headers.coep.{$channel}.value"),
+            'endpoint' => $endpoint,
+            'header' => $header,
+        ];
+    }
+
+    private function reportingEndpoint(string $configPath): ?ReportingEndpoint
+    {
+        $reference = config("security-headers.{$configPath}.reporting_endpoint");
 
         if ($reference === null) {
             return null;
         }
 
         if (! is_string($reference)) {
-            throw InvalidReportingEndpoint::invalidReference($channel);
+            throw InvalidReportingEndpoint::invalidReference($configPath);
         }
 
         $registry = config('security-headers.reporting.endpoints');
@@ -156,10 +195,10 @@ class ApplySecurityHeaders
         return ReportingEndpoint::fromConfig($reference, $registry[$reference]);
     }
 
-    private function emitLegacy(string $channel): bool
+    private function emitLegacy(string $configPath): bool
     {
         return filter_var(
-            config("security-headers.csp.{$channel}.emit_legacy_report_uri", true),
+            config("security-headers.{$configPath}.emit_legacy_report_uri", true),
             FILTER_VALIDATE_BOOL,
         );
     }

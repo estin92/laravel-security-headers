@@ -39,11 +39,6 @@ return [
             'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_RESOURCE_POLICY_ENABLED', true),
             'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_RESOURCE_POLICY', 'same-origin'),
         ],
-
-        'cross_origin_embedder_policy' => [
-            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY_ENABLED', false),
-            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY', 'require-corp'),
-        ],
     ],
 
     'hsts' => [
@@ -78,7 +73,24 @@ return [
         ],
     ],
 
+    'coep' => [
+        'enforce' => [
+            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY_ENABLED', false),
+            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY', 'require-corp'),
+            // Optional: the name of a reporting.endpoints entry, e.g. 'coep'.
+            'reporting_endpoint' => null,
+        ],
+        'report_only' => [
+            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY_REPORT_ONLY_ENABLED', false),
+            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_EMBEDDER_POLICY_REPORT_ONLY', 'require-corp'),
+            // The name of a reporting.endpoints entry, e.g. 'coep'. Required when this
+            // channel is enabled — a report-only header without an endpoint reports nothing.
+            'reporting_endpoint' => null,
+        ],
+    ],
+
     'csp' => [
+        'skip_when_vite_hot' => env('SECURITY_HEADERS_CSP_SKIP_WHEN_VITE_HOT', true),
         'enforce' => [
             'enabled' => env('SECURITY_HEADERS_CSP_ENABLED', false),
             'policy' => StrictPolicy::class,

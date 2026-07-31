@@ -41,11 +41,6 @@ class FlatHeaderCompiler
             'name' => 'Cross-Origin-Resource-Policy',
             'values' => Corp::class,
         ],
-
-        'cross_origin_embedder_policy' => [
-            'name' => 'Cross-Origin-Embedder-Policy',
-            'values' => Coep::class,
-        ],
     ];
 
     /**
