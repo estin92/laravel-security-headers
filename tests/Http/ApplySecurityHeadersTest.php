@@ -7,6 +7,7 @@ use Estin92\SecurityHeaders\Csp\Keyword as CspKeyword;
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspPolicy;
+use Estin92\SecurityHeaders\Exceptions\InvalidNel;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
 use Estin92\SecurityHeaders\Http\Middleware\ApplySecurityHeaders;
@@ -1020,4 +1021,225 @@ test('a non-array report_to_groups registry is handled defensively', function ()
 
     $this->get('/probe')->assertHeader('Content-Security-Policy');
     $this->get('/probe')->assertHeaderMissing('Report-To');
+});
+
+test('a positive NEL policy emits NEL and its Report-To group once', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['network-errors' => ['max_age' => 2592000, 'endpoints' => ['e']]]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'network-errors', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('NEL'))->toBe('{"report_to":"network-errors","max_age":2592000}');
+    $reportTo = $response->headers->get('Report-To');
+    expect($reportTo)->toContain('"group":"network-errors"');
+    expect(substr_count($reportTo, '"group":"network-errors"'))->toBe(1);
+});
+
+test('NEL sharing a group with a CSP channel emits one de-duplicated Report-To entry', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['shared' => ['max_age' => 2592000, 'endpoints' => ['e']]]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'shared'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'shared', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect(substr_count($response->headers->get('Report-To'), '"group":"shared"'))->toBe(1);
+    expect($response->headers->get('Content-Security-Policy'))->toContain('report-to shared');
+    expect($response->headers->get('NEL'))->toContain('"report_to":"shared"');
+});
+
+test('CSP, COEP and NEL sharing one group emit a single de-duplicated Report-To entry', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['shared' => ['max_age' => 2592000, 'endpoints' => ['e']]]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'shared'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'report_to_group' => 'shared'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'shared', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect(substr_count($response->headers->get('Report-To'), '"group":"shared"'))->toBe(1);
+    expect($response->headers->get('Content-Security-Policy'))->toContain('report-to shared');
+    expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toBe('require-corp; report-to="shared"');
+    expect($response->headers->get('NEL'))->toContain('"report_to":"shared"');
+});
+
+test('a NEL group colliding on emitted name with a CSP group under a distinct key fails loudly', function () {
+    config()->set('security-headers.reporting.endpoints', ['c' => ['url' => 'https://a.example.com/c'], 'n' => ['url' => 'https://a.example.com/n']]);
+    config()->set('security-headers.reporting.report_to_groups', [
+        'csp-key' => ['group' => 'dup', 'max_age' => 100, 'endpoints' => ['c']],
+        'nel-key' => ['group' => 'dup', 'max_age' => 2592000, 'endpoints' => ['n']],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'csp-key'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'nel-key', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportToGroup::class);
+});
+
+test('a NEL removal emits max_age zero and contributes no Report-To group', function () {
+    config()->set('security-headers.nel', ['enabled' => true, 'max_age' => 0]);
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => false, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('NEL'))->toBe('{"max_age":0}');
+    $response->assertHeaderMissing('Report-To');
+});
+
+test('an env-driven removal from the published block validates and emits', function () {
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => null, 'max_age' => '0', 'include_subdomains' => false, 'success_fraction' => null, 'failure_fraction' => null]);
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => false, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    expect($this->get('/probe')->headers->get('NEL'))->toBe('{"max_age":0}');
+});
+
+test('NEL coherence failures fail the request loudly', function (Closure $configure) {
+    $configure();
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidNel::class);
+})->with([
+    'references a removal group' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+        config()->set('security-headers.reporting.report_to_groups', ['retire' => ['group' => 'network-errors', 'max_age' => 0, 'endpoints' => ['e']]]);
+        config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'retire', 'max_age' => 100]);
+    }],
+    'group lifetime too short' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+        config()->set('security-headers.reporting.report_to_groups', ['network-errors' => ['max_age' => 100, 'endpoints' => ['e']]]);
+        config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'network-errors', 'max_age' => 200]);
+    }],
+    'subdomains mismatch' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+        config()->set('security-headers.reporting.report_to_groups', ['network-errors' => ['max_age' => 2592000, 'endpoints' => ['e']]]);
+        config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'network-errors', 'max_age' => 100, 'include_subdomains' => true]);
+    }],
+    'unknown group key' => [function () {
+        config()->set('security-headers.reporting.report_to_groups', []);
+        config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'ghost', 'max_age' => 100]);
+    }],
+]);
+
+test('enabled is accepted as control state and stripped before policy validation', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['network-errors' => ['max_age' => 2592000, 'endpoints' => ['e']]]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'network-errors', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    expect($this->get('/probe')->headers->get('NEL'))->toContain('"report_to":"network-errors"');
+});
+
+test('an unknown key besides enabled still fails loudly', function () {
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'g', 'max_age' => 100, 'bogus' => 1]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidNel::class);
+});
+
+test('a disabled NEL block with malformed fields does not fail the request', function () {
+    config()->set('security-headers.nel', ['enabled' => false, 'max_age' => 'rubbish', 'success_fraction' => 'nonsense']);
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    $response->assertHeader('Content-Security-Policy');
+    $response->assertHeaderMissing('NEL');
+});
+
+test('a truthy-but-not-true enabled value leaves NEL dormant', function (mixed $enabled) {
+    config()->set('security-headers.nel', ['enabled' => $enabled, 'report_to_group' => 'g', 'max_age' => 'rubbish']);
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    $response->assertHeader('Content-Security-Policy');
+    $response->assertHeaderMissing('NEL');
+})->with([
+    'string one' => ['1'],
+    'int one' => [1],
+    'string true' => ['true'],
+]);
+
+test('the package does not emit or modify NEL when disabled', function () {
+    config()->set('security-headers.nel', ['enabled' => false, 'max_age' => 100]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', function () {
+        return response('ok')->header('NEL', 'app-supplied');
+    });
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('NEL'))->toBe('app-supplied');
+});
+
+test('the NEL header replaces a pre-existing inbound NEL when enabled', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['network-errors' => ['max_age' => 2592000, 'endpoints' => ['e']]]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'network-errors', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', function () {
+        return response('ok')->header('NEL', 'stale');
+    });
+    $response = $this->get('/probe');
+
+    expect($response->headers->all('nel'))->toHaveCount(1);
+    expect($response->headers->get('NEL'))->not->toContain('stale');
+});
+
+test('adding a NEL-only group does not reorder existing CSP groups in Report-To', function () {
+    config()->set('security-headers.reporting.endpoints', ['c' => ['url' => 'https://a.example.com/c'], 'n' => ['url' => 'https://a.example.com/n']]);
+    config()->set('security-headers.reporting.report_to_groups', [
+        'csp-group' => ['max_age' => 100, 'endpoints' => ['c']],
+        'nel-group' => ['max_age' => 2592000, 'endpoints' => ['n']],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'csp-group'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'nel-group', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $header = $this->get('/probe')->headers->get('Report-To');
+
+    $cspPosition = strpos($header, '"group":"csp-group"');
+    $nelPosition = strpos($header, '"group":"nel-group"');
+
+    expect($cspPosition)->toBeInt();
+    expect($nelPosition)->toBeInt();
+    expect($cspPosition)->toBeLessThan($nelPosition);
+});
+
+test('NEL emits regardless of the CSP vite-hot skip', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['network-errors' => ['max_age' => 2592000, 'endpoints' => ['e']]]);
+    config()->set('security-headers.csp', ['skip_when_vite_hot' => true, 'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'network-errors', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    withViteHot(function () {
+        $response = $this->get('/probe');
+        $response->assertHeaderMissing('Content-Security-Policy');
+        expect($response->headers->get('NEL'))->toContain('"report_to":"network-errors"');
+    });
+});
+
+test('a non-array nel config is handled defensively', function () {
+    config()->set('security-headers.nel', 'not-an-array');
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeaderMissing('NEL');
 });

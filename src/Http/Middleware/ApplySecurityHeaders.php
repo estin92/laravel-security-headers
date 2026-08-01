@@ -12,16 +12,20 @@ use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\CspPolicyResolver;
 use Estin92\SecurityHeaders\Csp\CspReporting;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
+use Estin92\SecurityHeaders\Exceptions\InvalidNel;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
 use Estin92\SecurityHeaders\Headers\FlatHeaderCompiler;
 use Estin92\SecurityHeaders\Headers\HstsCompiler;
+use Estin92\SecurityHeaders\Nel\NelCompiler;
+use Estin92\SecurityHeaders\Nel\NelPolicy;
 use Estin92\SecurityHeaders\PermissionsPolicy\PermissionsPolicyCompiler;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpointsCompiler;
 use Estin92\SecurityHeaders\Reporting\ReportToCompiler;
 use Estin92\SecurityHeaders\Reporting\ReportToGroup;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -43,6 +47,19 @@ class ApplySecurityHeaders
             $this->coepChannel('enforce', 'Cross-Origin-Embedder-Policy'),
             $this->coepChannel('report_only', 'Cross-Origin-Embedder-Policy-Report-Only'),
         ]);
+
+        $nelDefinition = config('security-headers.nel');
+        $nel = is_array($nelDefinition) && ($nelDefinition['enabled'] ?? false) === true
+            ? NelPolicy::fromConfig(Arr::except($nelDefinition, ['enabled']))
+            : null;
+
+        $nelGroup = null;
+        $nelGroupRecord = null;
+        if ($nel !== null && $nel->reportToGroupKey !== null) {
+            $nelGroup = $this->resolveNelGroup($nel->reportToGroupKey);
+            $nel->assertCompatibleWith($nelGroup);
+            $nelGroupRecord = ['key' => $nel->reportToGroupKey, 'group' => $nelGroup];
+        }
 
         $requiresNonce = false;
 
@@ -100,10 +117,15 @@ class ApplySecurityHeaders
         $groups = $this->reportToGroups(
             ...array_column($channels, 'group'),
             ...array_column($coepChannels, 'group'),
+            ...($nelGroupRecord !== null ? [$nelGroupRecord] : []),
         );
 
         if ($groups !== []) {
             $response->headers->set('Report-To', (new ReportToCompiler)->compile($groups));
+        }
+
+        if ($nel !== null) {
+            $response->headers->set('NEL', (new NelCompiler)->compile($nel, $nelGroup));
         }
 
         return $response;
@@ -257,6 +279,18 @@ class ApplySecurityHeaders
         $endpoints = is_array($endpoints) ? $endpoints : [];
 
         return ReportToGroup::fromConfig($reference, $registry[$reference], $endpoints);
+    }
+
+    private function resolveNelGroup(string $key): ReportToGroup
+    {
+        $registry = config('security-headers.reporting.report_to_groups');
+        $registry = is_array($registry) ? $registry : [];
+
+        if (! array_key_exists($key, $registry)) {
+            throw InvalidNel::unknownGroup($key);
+        }
+
+        return $this->resolveGroup($key);
     }
 
     private function reportingEndpointsHeader(?ReportingEndpoint ...$endpoints): ?string

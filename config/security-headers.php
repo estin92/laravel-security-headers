@@ -129,4 +129,16 @@ return [
         ],
     ],
 
+    'nel' => [
+        'enabled' => env('SECURITY_HEADERS_NEL_ENABLED', false),
+        // Required unless max_age is 0.
+        'report_to_group' => null,
+        'max_age' => env('SECURITY_HEADERS_NEL_MAX_AGE', 2592000),
+        'include_subdomains' => env('SECURITY_HEADERS_NEL_INCLUDE_SUBDOMAINS', false),
+        // Percentage of requests to report, as a fraction 0.0-1.0. null applies the
+        // NEL defaults: 0.0 for successes, 1.0 for failures.
+        'success_fraction' => null,
+        'failure_fraction' => null,
+    ],
+
 ];

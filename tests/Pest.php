@@ -12,6 +12,7 @@ uses(TestCase::class)->in(
     __DIR__.'/Coep',
     __DIR__.'/Csp',
     __DIR__.'/Headers',
+    __DIR__.'/Nel',
     __DIR__.'/PermissionsPolicy',
     __DIR__.'/Reporting',
     __DIR__.'/Support',
