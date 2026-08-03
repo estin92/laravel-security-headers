@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\PermissionsPolicy\Keyword;
+use Estin92\SecurityHeaders\Reporting\Ingestion\ReportType;
 
 return [
 
@@ -140,6 +141,78 @@ return [
             //     'include_subdomains' => true,
             //     'endpoints' => ['security'],
             // ],
+        ],
+
+        'ingestion' => [
+            'enabled' => env('SECURITY_HEADERS_INGESTION_ENABLED', false),
+
+            // Swap in your own string-backed enum (implementing ReportTypeContract) to accept
+            // report types beyond the four this package emits.
+            'report_type_enum' => ReportType::class,
+
+            // Validate the body of a report type the package does not know how to check itself.
+            // Keyed by the report's `type` value; only for types your enum adds, not the built-in
+            // four (csp-violation, coep, coop, network-error), which validate themselves.
+            'body_validators' => [
+                // 'document-policy-violation' => App\Reporting\DocumentPolicyReportValidator::class,
+            ],
+
+            'route' => [
+                'path' => env('SECURITY_HEADERS_INGESTION_PATH', '/security/reports'),
+                'domain' => env('SECURITY_HEADERS_INGESTION_DOMAIN'),
+            ],
+
+            'database' => [
+                'connection' => env('SECURITY_HEADERS_INGESTION_CONNECTION'),
+                'table' => env('SECURITY_HEADERS_INGESTION_TABLE', 'security_reports'),
+            ],
+
+            'storage' => [
+                // 'sanitized' or 'raw'.
+                'mode' => env('SECURITY_HEADERS_INGESTION_STORAGE_MODE', 'sanitized'),
+                // Required to run in 'raw' mode, which stores reports unscrubbed.
+                'raw_acknowledged' => env('SECURITY_HEADERS_INGESTION_RAW_ACKNOWLEDGED', false),
+                // Scrubbing applied in 'sanitized' mode. remove_client_ip and mask_client_ip are exclusive.
+                'sanitizers' => [
+                    'remove_client_ip' => true,             // the reporter's IP address
+                    'mask_client_ip' => false,              // mask the IP's final octets so it identifies a network
+                    'strip_query' => true,                  // the ?query string on reported URLs
+                    'remove_sample' => false,               // the markup snippet that triggered a CSP report
+                    'remove_nel_headers' => true,           // request/response headers in network-error reports
+                    'remove_request_user_agent' => false,   // the User-Agent from the report request
+                    'remove_reported_user_agent' => false,  // the User-Agent inside the report body
+                ],
+            ],
+
+            'limits' => [
+                'max_bytes' => env('SECURITY_HEADERS_INGESTION_MAX_BYTES', 65536),
+                'max_reports_per_batch' => env('SECURITY_HEADERS_INGESTION_MAX_BATCH', 100),
+                'json_depth' => env('SECURITY_HEADERS_INGESTION_JSON_DEPTH', 32),
+                'url_length' => env('SECURITY_HEADERS_INGESTION_URL_LENGTH', 8192),
+                'user_agent_length' => env('SECURITY_HEADERS_INGESTION_UA_LENGTH', 1024),
+                'relaxed_acknowledged' => false,
+            ],
+
+            'rate_limiting' => [
+                'enabled' => env('SECURITY_HEADERS_INGESTION_RATE_LIMITING', true),
+                'limiter' => 'security-headers-ingestion',
+                'reporting_api_per_minute' => 120,
+                'legacy_csp_per_minute' => 600,
+                'external_limiting_acknowledged' => false,
+            ],
+
+            'cors' => [
+                // Leave empty if the reports come from your own site. Only list an origin here if a
+                // different site needs to send reports to this endpoint from the browser.
+                'allowed_origins' => [
+                    // 'https://app.example.com',
+                ],
+            ],
+
+            'retention' => [
+                'days' => env('SECURITY_HEADERS_INGESTION_RETENTION_DAYS', 30),
+                'max_rows' => env('SECURITY_HEADERS_INGESTION_MAX_ROWS', 100000),
+            ],
         ],
     ],
 
