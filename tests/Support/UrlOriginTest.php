@@ -19,6 +19,15 @@ test('it drops the default port for the scheme', function (string $url, string $
     'http default' => ['http://example.com:80/x', 'http://example.com'],
 ]);
 
+test('it builds a valid bracketed origin for an IPv6 host', function (string $url, string $origin) {
+    expect(UrlOrigin::from($url))->toBe($origin);
+})->with([
+    'loopback' => ['https://[::1]/path', 'https://[::1]'],
+    'loopback default port collapses' => ['https://[::1]:443/path', 'https://[::1]'],
+    'loopback non-default port kept' => ['https://[::1]:8080/path', 'https://[::1]:8080'],
+    'global address' => ['https://[2001:db8::1]/x', 'https://[2001:db8::1]'],
+]);
+
 test('it lowercases the scheme and host', function () {
     expect(UrlOrigin::from('HTTPS://Example.COM/x'))->toBe('https://example.com');
 });

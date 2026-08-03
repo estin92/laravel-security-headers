@@ -11,6 +11,7 @@ use Estin92\SecurityHeaders\Reporting\Ingestion\IngestionStorage;
 use Illuminate\Console\Command;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Carbon;
+use Throwable;
 
 final class AuditCommand extends Command
 {
@@ -35,7 +36,7 @@ final class AuditCommand extends Command
         }
 
         if (! $this->tableExists($database)) {
-            $this->error('The ingestion table '.IngestionStorage::table().' is missing — run the package migration.');
+            $this->error('The ingestion table '.IngestionStorage::table().' is unreachable or missing — check the connection and run the package migration.');
             $hasHardFinding = true;
         } elseif ($configValid) {
             $this->reportRetention(IngestionConfigValidator::section($config, 'retention'));
@@ -57,9 +58,13 @@ final class AuditCommand extends Command
 
     private function tableExists(DatabaseManager $database): bool
     {
-        return $database->connection(IngestionStorage::connection())
-            ->getSchemaBuilder()
-            ->hasTable(IngestionStorage::table());
+        try {
+            return $database->connection(IngestionStorage::connection())
+                ->getSchemaBuilder()
+                ->hasTable(IngestionStorage::table());
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**

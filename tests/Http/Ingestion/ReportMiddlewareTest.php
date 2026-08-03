@@ -10,6 +10,8 @@ use Estin92\SecurityHeaders\Reporting\Ingestion\Events\ReportSubmissionRejected;
 use Estin92\SecurityHeaders\Reporting\Ingestion\RejectionReason;
 use Estin92\SecurityHeaders\Reporting\Ingestion\ReportProtocol;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
@@ -48,6 +50,23 @@ test('a preflight from an allowed origin gets CORS headers', function () {
     expect($response->headers->get('Access-Control-Allow-Origin'))->toBe('https://app.example.com');
     expect($response->headers->get('Access-Control-Allow-Methods'))->toBe('POST');
     expect($response->headers->get('Vary'))->toBe('Origin');
+});
+
+test('CORS decoration appends to an existing Vary header rather than replacing it', function () {
+    config()->set('security-headers.reporting.ingestion.cors.allowed_origins', ['https://app.example.com']);
+
+    $request = Request::create('/security/reports', 'POST');
+    $request->headers->set('Origin', 'https://app.example.com');
+
+    $middleware = new HandleReportCors(app(Dispatcher::class));
+    $response = $middleware->handle($request, function () {
+        $downstream = response('', 204);
+        $downstream->headers->set('Vary', 'Accept-Encoding');
+
+        return $downstream;
+    });
+
+    expect($response->headers->all('Vary'))->toContain('Accept-Encoding', 'Origin');
 });
 
 test('a preflight from a disallowed origin gets no CORS grant', function () {

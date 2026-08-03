@@ -29,7 +29,7 @@ final class ReportIngestionController
             $context,
         );
 
-        if ($result->isAccepted() || $result->errorCode === null) {
+        if ($result->errorCode === null) {
             return new Response(status: 204);
         }
 

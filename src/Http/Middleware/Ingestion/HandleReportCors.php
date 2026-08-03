@@ -83,7 +83,8 @@ final class HandleReportCors
     private function decorate(SymfonyResponse $response, string $origin): void
     {
         $response->headers->set('Access-Control-Allow-Origin', $origin);
-        $response->headers->set('Vary', 'Origin');
+        // Append so an existing Vary from other middleware survives.
+        $response->headers->set('Vary', 'Origin', false);
     }
 
     private function isAllowed(string $origin): bool

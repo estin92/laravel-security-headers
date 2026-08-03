@@ -44,6 +44,15 @@ test('a missing table is a hard finding that fails the audit', function () {
         ->assertFailed();
 });
 
+test('an unreachable connection is a hard finding, not a crash', function () {
+    config()->set('database.connections.broken', ['driver' => 'sqlite', 'database' => '/does/not/exist/reports.sqlite']);
+    config()->set('security-headers.reporting.ingestion.database.connection', 'broken');
+
+    $this->artisan('security-headers:audit')
+        ->expectsOutputToContain('unreachable')
+        ->assertFailed();
+});
+
 test('an invalid configuration is a hard finding that fails the audit', function () {
     config()->set('security-headers.reporting.ingestion.retention.days', 0);
 

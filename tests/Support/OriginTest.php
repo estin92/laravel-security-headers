@@ -12,6 +12,24 @@ test('it keeps a non-default port', function () {
     expect(Origin::normalize('https://app.example.com:8443'))->toBe('https://app.example.com:8443');
 });
 
+test('it collapses the default port so it matches the origin a browser sends', function (string $origin, string $expected) {
+    expect(Origin::normalize($origin))->toBe($expected);
+})->with([
+    'https 443' => ['https://app.example.com:443', 'https://app.example.com'],
+    'http 80 on localhost' => ['http://localhost:80', 'http://localhost'],
+]);
+
+test('it normalises an IPv6 origin keeping the brackets', function (string $origin, ?string $expected) {
+    expect(Origin::normalize($origin))->toBe($expected);
+})->with([
+    'https loopback' => ['https://[::1]', 'https://[::1]'],
+    'http loopback is a trustworthy local host' => ['http://[::1]', 'http://[::1]'],
+    'https loopback default port collapses' => ['https://[::1]:443', 'https://[::1]'],
+    'https loopback non-default port kept' => ['https://[::1]:8443', 'https://[::1]:8443'],
+    'https global address' => ['https://[2001:db8::1]', 'https://[2001:db8::1]'],
+    'http global address rejected as not local' => ['http://[2001:db8::1]', null],
+]);
+
 test('it lowercases the scheme and host', function () {
     expect(Origin::normalize('HTTPS://App.Example.COM'))->toBe('https://app.example.com');
 });

@@ -6,6 +6,8 @@ namespace Estin92\SecurityHeaders\Support;
 
 class Origin
 {
+    private const DEFAULT_PORTS = ['http' => 80, 'https' => 443];
+
     // http is only trusted from a local host; everything else must be https.
     public static function normalize(string $origin): ?string
     {
@@ -15,10 +17,8 @@ class Origin
             return null;
         }
 
-        foreach (['user', 'pass', 'path', 'query', 'fragment'] as $extra) {
-            if (isset($parts[$extra])) {
-                return null;
-            }
+        if (array_any(['user', 'pass', 'path', 'query', 'fragment'], fn($extra) => isset($parts[$extra]))) {
+            return null;
         }
 
         $scheme = strtolower($parts['scheme']);
@@ -28,7 +28,9 @@ class Origin
             return null;
         }
 
-        $port = isset($parts['port']) ? ':'.$parts['port'] : '';
+        $port = isset($parts['port']) && $parts['port'] !== self::DEFAULT_PORTS[$scheme]
+            ? ':'.$parts['port']
+            : '';
 
         return $scheme.'://'.$host.$port;
     }
