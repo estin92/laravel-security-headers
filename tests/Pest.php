@@ -26,6 +26,7 @@ uses(IngestionTestCase::class)->in(
     __DIR__.'/Reporting/Ingestion/IncidentFingerprintTest.php',
     __DIR__.'/Reporting/Ingestion/IngestionBootGateTest.php',
     __DIR__.'/Reporting/Ingestion/IngestionConfigValidatorTest.php',
+    __DIR__.'/Reporting/Ingestion/IngestionConnectionTest.php',
     __DIR__.'/Reporting/Ingestion/IngestionPipelineTest.php',
     __DIR__.'/Reporting/Ingestion/JsonObjectCastTest.php',
     __DIR__.'/Reporting/Ingestion/LegacyCspReportDecoderTest.php',

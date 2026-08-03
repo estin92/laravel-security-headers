@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Estin92\SecurityHeaders\Models\Casts\JsonObjectCast;
 use Estin92\SecurityHeaders\Models\SecurityReport;
 use Estin92\SecurityHeaders\Support\JsonObject;
+use Illuminate\Support\Facades\Log;
 
 function cast(): JsonObjectCast
 {
@@ -28,6 +29,12 @@ test('get decodes a stored object into a JsonObject', function () {
 
     expect($result)->toBeInstanceOf(JsonObject::class);
     expect($result->get(['a']))->toBe(1);
+});
+
+test('get returns null and logs when the stored body is corrupt', function () {
+    Log::shouldReceive('error')->once();
+
+    expect(cast()->get(new SecurityReport, 'body', '{"a":', []))->toBeNull();
 });
 
 test('set serialises a JsonObject to its JSON string', function () {

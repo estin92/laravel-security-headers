@@ -17,12 +17,14 @@ use Estin92\SecurityHeaders\Reporting\Ingestion\BodyValidator\BodyValidatorRegis
 use Estin92\SecurityHeaders\Reporting\Ingestion\DefaultIngestionRateLimiter;
 use Estin92\SecurityHeaders\Reporting\Ingestion\IngestionConfigValidator;
 use Estin92\SecurityHeaders\Reporting\Ingestion\IngestionPipeline;
+use Estin92\SecurityHeaders\Reporting\Ingestion\IngestionStorage;
 use Estin92\SecurityHeaders\Reporting\Ingestion\LegacyCspReportDecoder;
 use Estin92\SecurityHeaders\Reporting\Ingestion\ModernReportDecoder;
 use Estin92\SecurityHeaders\Reporting\Ingestion\ReportType;
 use Estin92\SecurityHeaders\Reporting\Ingestion\ReportTypeResolver;
 use Estin92\SecurityHeaders\Reporting\Ingestion\StoragePolicy;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Http\Kernel;
@@ -77,6 +79,9 @@ class SecurityHeadersServiceProvider extends ServiceProvider
         }
     }
 
+    /**
+     * @throws BindingResolutionException
+     */
     private function makePipeline(Container $app): IngestionPipeline
     {
         $ingestion = config('security-headers.reporting.ingestion');
@@ -103,7 +108,7 @@ class SecurityHeadersServiceProvider extends ServiceProvider
             new BodyValidatorRegistry($bodyValidators, $app),
             new StoragePolicy(['storage' => $storage]),
             $app->make(Dispatcher::class),
-            $app->make(DatabaseManager::class)->connection(),
+            $app->make(DatabaseManager::class)->connection(IngestionStorage::connection()),
             $app->make(LoggerInterface::class),
         );
     }

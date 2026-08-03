@@ -7,7 +7,9 @@ namespace Estin92\SecurityHeaders\Models\Casts;
 use Estin92\SecurityHeaders\Support\JsonObject;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use JsonException;
 use stdClass;
 
 /**
@@ -24,7 +26,16 @@ class JsonObjectCast implements CastsAttributes
             return null;
         }
 
-        $decoded = json_decode($value, false, 512, JSON_THROW_ON_ERROR);
+        try {
+            $decoded = json_decode($value, false, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            Log::error('A stored security report body was not valid JSON.', [
+                'model' => $model::class,
+                'key' => $model->getKey(),
+            ]);
+
+            return null;
+        }
 
         if (! $decoded instanceof stdClass) {
             return null;
