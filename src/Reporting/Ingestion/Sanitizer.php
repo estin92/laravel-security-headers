@@ -218,9 +218,10 @@ final class Sanitizer
             return $value;
         }
 
-        $queryStart = strpos($value, '?');
+        // A fragment carries secrets (OAuth tokens, state) just as a query does, so cut at whichever comes first.
+        $positions = array_filter([strpos($value, '?'), strpos($value, '#')], fn ($pos) => $pos !== false);
 
-        return $queryStart === false ? $value : substr($value, 0, $queryStart);
+        return $positions === [] ? $value : substr($value, 0, min($positions));
     }
 
     private function maskIp(string $ip): ?string

@@ -24,6 +24,7 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
 use Psr\Log\LoggerInterface;
 
 uses(RefreshDatabase::class);

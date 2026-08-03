@@ -55,7 +55,7 @@ final class EnsureStorageReady
 
     private function storageUnavailable(): SymfonyResponse
     {
-        $this->logger->error('Report ingestion is enabled but its table is missing — run the package migration.', [
+        $this->logger->error('Report ingestion is enabled but its table is unreachable or missing — check the connection and run the package migration.', [
             'table' => IngestionStorage::table(),
         ]);
 

@@ -98,6 +98,19 @@ test('strip_query transforms every allow-listed CSP body field', function () {
     expect($result->body->get(['referrer']))->toBe('https://example.com/from');
 });
 
+test('strip_query also strips a URL fragment, which can carry a token', function (string $stored, string $expected) {
+    $report = cspReport(['documentURL' => $stored], $stored);
+
+    $result = (new Sanitizer(sanitizerConfig(), StorageMode::Sanitized))->sanitize(submission($report));
+
+    expect($result->url)->toBe($expected);
+    expect($result->body->get(['documentURL']))->toBe($expected);
+})->with([
+    'fragment only' => ['https://example.com/callback#access_token=secret', 'https://example.com/callback'],
+    'query then fragment' => ['https://example.com/cb?code=1#access_token=secret', 'https://example.com/cb'],
+    'fragment then a literal question mark' => ['https://example.com/p#a?b', 'https://example.com/p'],
+]);
+
 test('strip_query off leaves query strings on the url and body intact', function () {
     $report = cspReport(['blockedURL' => 'https://evil.example/b?y=2'], 'https://example.com/a?x=1');
 
