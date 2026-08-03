@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Coep\CoepCompiler;
-use Estin92\SecurityHeaders\Coep\CoepReporting;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidHeaderValue;
 use Estin92\SecurityHeaders\Headers\Coep;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
+use Estin92\SecurityHeaders\Reporting\ReportToDestination;
 
-function coepReporting(): CoepReporting
+function coepReporting(): ReportToDestination
 {
-    return CoepReporting::fromTargets(
+    return ReportToDestination::fromTargets(
         ReportingEndpoint::fromConfig('coep', ['url' => 'https://a.example.com/coep']),
         null,
     );

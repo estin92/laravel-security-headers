@@ -30,11 +30,6 @@ return [
             'value' => env('SECURITY_HEADERS_X_XSS_PROTECTION', '0'),
         ],
 
-        'cross_origin_opener_policy' => [
-            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_OPENER_POLICY_ENABLED', true),
-            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_OPENER_POLICY', 'same-origin'),
-        ],
-
         'cross_origin_resource_policy' => [
             'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_RESOURCE_POLICY_ENABLED', true),
             'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_RESOURCE_POLICY', 'same-origin'),
@@ -89,6 +84,25 @@ return [
             // channel is enabled — a report-only header without an endpoint reports nothing.
             'reporting_endpoint' => null,
             // Optional: the name of a reporting.report_to_groups entry (legacy Report-To).
+            'report_to_group' => null,
+        ],
+    ],
+
+    'coop' => [
+        'enforce' => [
+            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_OPENER_POLICY_ENABLED', true),
+            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_OPENER_POLICY', 'same-origin'),
+            // Optional: a reporting.endpoints entry name (modern Reporting-Endpoints).
+            'reporting_endpoint' => null,
+            // Optional: a reporting.report_to_groups entry key (legacy Report-To).
+            'report_to_group' => null,
+        ],
+        'report_only' => [
+            'enabled' => env('SECURITY_HEADERS_CROSS_ORIGIN_OPENER_POLICY_REPORT_ONLY_ENABLED', false),
+            'value' => env('SECURITY_HEADERS_CROSS_ORIGIN_OPENER_POLICY_REPORT_ONLY', 'same-origin'),
+            // Required when enabled — a report-only header with no destination reports
+            // nothing. noopener-allow-popups is not a valid report-only value.
+            'reporting_endpoint' => null,
             'report_to_group' => null,
         ],
     ],

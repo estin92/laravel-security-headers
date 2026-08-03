@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use Estin92\SecurityHeaders\Csp\CspReporting;
-use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
+use Estin92\SecurityHeaders\Exceptions\InvalidReportToDestination;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
 use Estin92\SecurityHeaders\Reporting\ReportToGroup;
 
@@ -41,20 +41,20 @@ test('dual registration with the same name is accepted', function () {
 
 test('it rejects dual targets whose names differ', function () {
     expect(fn () => CspReporting::fromTargets(cspModernEndpoint(), cspLegacyGroup('other'), true))
-        ->toThrow(InvalidReportToGroup::class);
+        ->toThrow(InvalidReportToDestination::class);
 });
 
 test('it rejects a removal group as a target', function () {
     expect(fn () => CspReporting::fromTargets(null, cspLegacyGroup('security', 0), false))
-        ->toThrow(InvalidReportToGroup::class);
+        ->toThrow(InvalidReportToDestination::class);
 });
 
 test('it rejects a removal group even when a modern endpoint is present', function () {
     expect(fn () => CspReporting::fromTargets(cspModernEndpoint(), cspLegacyGroup('security', 0), true))
-        ->toThrow(InvalidReportToGroup::class);
+        ->toThrow(InvalidReportToDestination::class);
 });
 
 test('it rejects two null targets', function () {
     expect(fn () => CspReporting::fromTargets(null, null, false))
-        ->toThrow(InvalidReportToGroup::class);
+        ->toThrow(InvalidReportToDestination::class);
 });

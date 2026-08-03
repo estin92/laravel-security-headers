@@ -13,8 +13,8 @@ class InvalidCoep extends InvalidArgumentException
         return new self('A COEP channel set to unsafe-none cannot carry a reporting endpoint.');
     }
 
-    public static function reportOnlyMissingEndpoint(): self
+    public static function reportOnlyMissingDestination(): self
     {
-        return new self('An enabled report-only COEP channel must name a reporting endpoint.');
+        return new self('An enabled report-only COEP channel must name a reporting destination.');
     }
 }

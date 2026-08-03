@@ -10,6 +10,7 @@ use Estin92\SecurityHeaders\Tests\TestCase;
 uses(WithoutAutoRegistration::class)->in(__DIR__.'/Http');
 uses(TestCase::class)->in(
     __DIR__.'/Coep',
+    __DIR__.'/Coop',
     __DIR__.'/Csp',
     __DIR__.'/Headers',
     __DIR__.'/Nel',

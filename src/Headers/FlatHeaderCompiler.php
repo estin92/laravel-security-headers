@@ -32,11 +32,6 @@ class FlatHeaderCompiler
             'values' => XssProtection::class,
         ],
 
-        'cross_origin_opener_policy' => [
-            'name' => 'Cross-Origin-Opener-Policy',
-            'values' => Coop::class,
-        ],
-
         'cross_origin_resource_policy' => [
             'name' => 'Cross-Origin-Resource-Policy',
             'values' => Corp::class,

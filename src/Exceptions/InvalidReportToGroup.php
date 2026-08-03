@@ -54,21 +54,6 @@ class InvalidReportToGroup extends InvalidArgumentException
         return new self('The Report-To group '.MessageValue::escape($group).' references an endpoint more than once: '.MessageValue::escape($name));
     }
 
-    public static function targetNameMismatch(string $modern, string $legacy): self
-    {
-        return new self('A channel\'s modern endpoint ('.MessageValue::escape($modern).') and legacy group ('.MessageValue::escape($legacy).') must share one name for a single report-to directive.');
-    }
-
-    public static function removalGroupNotAddressable(string $group): self
-    {
-        return new self('A Report-To group with max_age 0 (removal) cannot be used as a reporting target: '.MessageValue::escape($group));
-    }
-
-    public static function noReportingTarget(): self
-    {
-        return new self('A reporting directive needs at least one target: a modern endpoint or a legacy group.');
-    }
-
     public static function invalidReference(string $configPath, mixed $value): self
     {
         return new self('The '.MessageValue::escape($configPath).' report_to_group must be a string or absent, got: '.MessageValue::escape(is_scalar($value) ? (string) $value : gettype($value)));

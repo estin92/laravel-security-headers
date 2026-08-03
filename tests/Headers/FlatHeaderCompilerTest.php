@@ -17,14 +17,12 @@ test('it compiles enabled headers to a name and value map', function () {
     ]);
 });
 
-test('it compiles the cross-origin headers', function () {
+test('it compiles the cross-origin resource policy header', function () {
     $headers = new FlatHeaderCompiler([
-        'cross_origin_opener_policy' => ['enabled' => true, 'value' => 'same-origin'],
         'cross_origin_resource_policy' => ['enabled' => true, 'value' => 'same-origin'],
     ]);
 
     expect($headers->compile())->toBe([
-        'Cross-Origin-Opener-Policy' => 'same-origin',
         'Cross-Origin-Resource-Policy' => 'same-origin',
     ]);
 });
@@ -34,19 +32,14 @@ test('it rejects an invalid value for a header with a fixed value set', function
 
     expect(fn () => $headers->compile())->toThrow(InvalidHeaderValue::class);
 })->with([
-    'coop typo' => ['cross_origin_opener_policy', 'Cross-Origin-Opener-Policy', 'same-orign'],
     'corp typo' => ['cross_origin_resource_policy', 'Cross-Origin-Resource-Policy', 'same_origin'],
 ]);
 
-test('it accepts every valid value for the cross-origin headers', function (string $key, string $value) {
+test('it accepts every valid value for the cross-origin resource policy', function (string $key, string $value) {
     $headers = new FlatHeaderCompiler([$key => ['enabled' => true, 'value' => $value]]);
 
     expect($headers->compile())->toHaveCount(1);
 })->with([
-    ['cross_origin_opener_policy', 'unsafe-none'],
-    ['cross_origin_opener_policy', 'same-origin-allow-popups'],
-    ['cross_origin_opener_policy', 'same-origin'],
-    ['cross_origin_opener_policy', 'noopener-allow-popups'],
     ['cross_origin_resource_policy', 'same-site'],
     ['cross_origin_resource_policy', 'same-origin'],
     ['cross_origin_resource_policy', 'cross-origin'],
@@ -57,9 +50,7 @@ test('it rejects a value carrying a header-injection payload', function (string 
 
     expect(fn () => $headers->compile())->toThrow(InvalidHeaderValue::class);
 })->with([
-    'coop crlf' => ['cross_origin_opener_policy', "same-origin\r\nInjected: value"],
     'corp bare cr' => ['cross_origin_resource_policy', "same-origin\r"],
-    'coop bare lf' => ['cross_origin_opener_policy', "same-origin\n"],
     'unvalidated header crlf' => ['referrer_policy', "no-referrer\r\nInjected: value"],
 ]);
 
@@ -109,14 +100,14 @@ test('it rejects a referrer-policy list containing an invalid token', function (
     expect(fn () => $headers->compile())->toThrow(InvalidHeaderValue::class);
 });
 
-test('the shipped config enables coop and corp', function () {
+test('the shipped config enables corp as a flat header but not coop', function () {
     $config = require dirname(__DIR__, 2).'/config/security-headers.php';
 
     $compiled = (new FlatHeaderCompiler($config['headers']))->compile();
 
-    expect($compiled)->toHaveKeys(['Cross-Origin-Opener-Policy', 'Cross-Origin-Resource-Policy']);
-    expect($compiled['Cross-Origin-Opener-Policy'])->toBe('same-origin');
+    expect($compiled)->toHaveKey('Cross-Origin-Resource-Policy');
     expect($compiled['Cross-Origin-Resource-Policy'])->toBe('same-origin');
+    expect($compiled)->not->toHaveKey('Cross-Origin-Opener-Policy');
     expect($compiled)->not->toHaveKey('Cross-Origin-Embedder-Policy');
 });
 

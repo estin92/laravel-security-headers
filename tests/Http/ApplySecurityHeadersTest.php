@@ -6,9 +6,11 @@ use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\Keyword as CspKeyword;
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
+use Estin92\SecurityHeaders\Exceptions\InvalidCoop;
 use Estin92\SecurityHeaders\Exceptions\InvalidCspPolicy;
 use Estin92\SecurityHeaders\Exceptions\InvalidNel;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
+use Estin92\SecurityHeaders\Exceptions\InvalidReportToDestination;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
 use Estin92\SecurityHeaders\Http\Middleware\ApplySecurityHeaders;
 use Estin92\SecurityHeaders\PermissionsPolicy\Keyword;
@@ -578,7 +580,7 @@ test('unsafe-none COEP paired with an endpoint fails loudly through the middlewa
     expect(fn () => $this->get('/probe'))->toThrow(InvalidCoep::class);
 });
 
-test('an enabled report-only COEP channel with no endpoint fails loudly', function () {
+test('an enabled report-only COEP channel with no destination fails loudly', function () {
     config()->set('security-headers.coep', [
         'enforce' => ['enabled' => false, 'value' => 'require-corp'],
         'report_only' => ['enabled' => true, 'value' => 'require-corp'],
@@ -587,6 +589,43 @@ test('an enabled report-only COEP channel with no endpoint fails loudly', functi
     $this->withoutExceptionHandling();
 
     expect(fn () => $this->get('/probe'))->toThrow(InvalidCoep::class);
+});
+
+test('a report-only COEP channel accepts a legacy group as its destination', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['coep' => ['max_age' => 100, 'endpoints' => ['e']]]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => false, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => true, 'value' => 'require-corp', 'report_to_group' => 'coep'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    expect($this->get('/probe')->headers->get('Cross-Origin-Embedder-Policy-Report-Only'))->toContain('report-to="coep"');
+});
+
+test('a report-only COEP channel dual-registers a modern endpoint and a matching legacy group', function () {
+    config()->set('security-headers.reporting.endpoints', ['coep' => ['url' => 'https://a.example.com/coep']]);
+    config()->set('security-headers.reporting.report_to_groups', ['coep' => ['max_age' => 100, 'endpoints' => ['coep']]]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => false, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'coep', 'report_to_group' => 'coep'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    expect($this->get('/probe')->headers->get('Cross-Origin-Embedder-Policy-Report-Only'))->toContain('report-to="coep"');
+});
+
+test('a report-only COEP channel with a modern and legacy name mismatch fails loudly', function () {
+    config()->set('security-headers.reporting.endpoints', ['a' => ['url' => 'https://a.example.com/a']]);
+    config()->set('security-headers.reporting.report_to_groups', ['b' => ['max_age' => 100, 'endpoints' => ['a']]]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => false, 'value' => 'require-corp'],
+        'report_only' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'a', 'report_to_group' => 'b'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportToDestination::class);
 });
 
 test('an active COEP channel with a dangling endpoint reference fails loudly', function () {
@@ -871,11 +910,6 @@ test('collision and coherence rules fail loudly', function (Closure $configure) 
 
     expect(fn () => $this->get('/probe'))->toThrow(InvalidReportToGroup::class);
 })->with([
-    'channel modern+legacy names differ' => [function () {
-        config()->set('security-headers.reporting.endpoints', ['a' => ['url' => 'https://a.example.com/a'], 'b' => ['url' => 'https://a.example.com/b']]);
-        config()->set('security-headers.reporting.report_to_groups', ['b' => ['max_age' => 100, 'endpoints' => ['b']]]);
-        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'a', 'report_to_group' => 'b'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
-    }],
     'two active entries emit the same name' => [function () {
         config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
         config()->set('security-headers.reporting.report_to_groups', [
@@ -900,11 +934,6 @@ test('collision and coherence rules fail loudly', function (Closure $configure) 
         ]);
         config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'active'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
     }],
-    'channel references a removal group' => [function () {
-        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
-        config()->set('security-headers.reporting.report_to_groups', ['retire' => ['group' => 'retire', 'max_age' => 0, 'endpoints' => ['e']]]);
-        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'retire'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
-    }],
     'channel references an unknown group' => [function () {
         config()->set('security-headers.reporting.report_to_groups', []);
         config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'ghost'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
@@ -912,6 +941,25 @@ test('collision and coherence rules fail loudly', function (Closure $configure) 
     'malformed removal candidate' => [function () {
         config()->set('security-headers.reporting.report_to_groups', ['retire' => ['group' => 'old', 'max_age' => 0, 'endpoints' => []]]);
         config()->set('security-headers.csp', ['enforce' => ['enabled' => false, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    }],
+]);
+
+test('a channel reporting-target coherence failure fails loudly', function (Closure $configure) {
+    $configure();
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportToDestination::class);
+})->with([
+    'channel modern+legacy names differ' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['a' => ['url' => 'https://a.example.com/a'], 'b' => ['url' => 'https://a.example.com/b']]);
+        config()->set('security-headers.reporting.report_to_groups', ['b' => ['max_age' => 100, 'endpoints' => ['b']]]);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'a', 'report_to_group' => 'b'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    }],
+    'channel references a removal group' => [function () {
+        config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+        config()->set('security-headers.reporting.report_to_groups', ['retire' => ['group' => 'retire', 'max_age' => 0, 'endpoints' => ['e']]]);
+        config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'retire'], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
     }],
 ]);
 
@@ -1242,4 +1290,206 @@ test('a non-array nel config is handled defensively', function () {
     Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
 
     $this->get('/probe')->assertHeaderMissing('NEL');
+});
+
+test('an enforce COOP channel with a modern endpoint emits the header and Reporting-Endpoints', function () {
+    config()->set('security-headers.reporting.endpoints', ['coop' => ['url' => 'https://a.example.com/coop']]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => true, 'value' => 'same-origin', 'reporting_endpoint' => 'coop'],
+        'report_only' => ['enabled' => false, 'value' => 'same-origin'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Opener-Policy'))->toBe('same-origin; report-to="coop"');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('coop="https://a.example.com/coop"');
+});
+
+test('a report-only COOP channel with an endpoint emits the report-only header', function () {
+    config()->set('security-headers.reporting.endpoints', ['coop' => ['url' => 'https://a.example.com/coop']]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => false, 'value' => 'same-origin'],
+        'report_only' => ['enabled' => true, 'value' => 'same-origin', 'reporting_endpoint' => 'coop'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    expect($this->get('/probe')->headers->get('Cross-Origin-Opener-Policy-Report-Only'))
+        ->toBe('same-origin; report-to="coop"');
+});
+
+test('a report-only COOP channel with a legacy group only emits via the group', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['coop' => ['max_age' => 100, 'endpoints' => ['e']]]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => false, 'value' => 'same-origin'],
+        'report_only' => ['enabled' => true, 'value' => 'same-origin', 'report_to_group' => 'coop'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Opener-Policy-Report-Only'))->toContain('report-to="coop"');
+    expect($response->headers->get('Report-To'))->toContain('"group":"coop"');
+});
+
+test('a report-only COOP channel dual-registers a modern endpoint and a legacy group under one name', function () {
+    config()->set('security-headers.reporting.endpoints', ['coop' => ['url' => 'https://a.example.com/coop', 'legacy_url' => 'https://a.example.com/coop-legacy']]);
+    config()->set('security-headers.reporting.report_to_groups', ['coop' => ['max_age' => 2592000, 'endpoints' => ['coop']]]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => false, 'value' => 'same-origin'],
+        'report_only' => ['enabled' => true, 'value' => 'same-origin', 'reporting_endpoint' => 'coop', 'report_to_group' => 'coop'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    expect($response->headers->get('Cross-Origin-Opener-Policy-Report-Only'))->toBe('same-origin; report-to="coop"');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('coop="https://a.example.com/coop"');
+    expect($response->headers->get('Report-To'))->toBe('{"group":"coop","max_age":2592000,"endpoints":[{"url":"https://a.example.com/coop-legacy"}]}');
+});
+
+test('enforce COOP with unsafe-none and reporting emits (does not throw)', function () {
+    config()->set('security-headers.reporting.endpoints', ['coop' => ['url' => 'https://a.example.com/coop']]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => true, 'value' => 'unsafe-none', 'reporting_endpoint' => 'coop'],
+        'report_only' => ['enabled' => false, 'value' => 'same-origin'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    expect($this->get('/probe')->headers->get('Cross-Origin-Opener-Policy'))->toBe('unsafe-none; report-to="coop"');
+});
+
+test('report-only COOP with no destination fails loudly', function () {
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => false, 'value' => 'same-origin'],
+        'report_only' => ['enabled' => true, 'value' => 'same-origin'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidCoop::class);
+});
+
+test('report-only COOP with noopener-allow-popups and a destination fails loudly', function () {
+    config()->set('security-headers.reporting.endpoints', ['coop' => ['url' => 'https://a.example.com/coop']]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => false, 'value' => 'same-origin'],
+        'report_only' => ['enabled' => true, 'value' => 'noopener-allow-popups', 'reporting_endpoint' => 'coop'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidCoop::class);
+});
+
+test('report-only COOP with noopener-allow-popups and NO destination fails with the destination error first', function () {
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => false, 'value' => 'same-origin'],
+        'report_only' => ['enabled' => true, 'value' => 'noopener-allow-popups'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidCoop::class, 'destination');
+});
+
+test('COOP sharing a group with CSP, COEP and NEL emits one de-duplicated Report-To entry', function () {
+    config()->set('security-headers.reporting.endpoints', ['e' => ['url' => 'https://a.example.com/e']]);
+    config()->set('security-headers.reporting.report_to_groups', ['shared' => ['max_age' => 2592000, 'endpoints' => ['e']]]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'shared'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'report_to_group' => 'shared'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => true, 'value' => 'same-origin', 'report_to_group' => 'shared'],
+        'report_only' => ['enabled' => false, 'value' => 'same-origin'],
+    ]);
+    config()->set('security-headers.nel', ['enabled' => true, 'report_to_group' => 'shared', 'max_age' => 2592000]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+    $header = $response->headers->get('Report-To');
+
+    expect(substr_count($header, '"group":"shared"'))->toBe(1);
+    expect($response->headers->get('Cross-Origin-Opener-Policy'))->toContain('report-to="shared"');
+    expect($response->headers->get('Cross-Origin-Embedder-Policy'))->toContain('report-to="shared"');
+    expect($response->headers->get('Content-Security-Policy'))->toContain('report-to shared');
+});
+
+test('a COOP group colliding on emitted name with a CSP group under a distinct key fails loudly', function () {
+    config()->set('security-headers.reporting.endpoints', ['c' => ['url' => 'https://a.example.com/c'], 'o' => ['url' => 'https://a.example.com/o']]);
+    config()->set('security-headers.reporting.report_to_groups', [
+        'csp-key' => ['group' => 'dup', 'max_age' => 100, 'endpoints' => ['c']],
+        'coop-key' => ['group' => 'dup', 'max_age' => 100, 'endpoints' => ['o']],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'report_to_group' => 'csp-key'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => true, 'value' => 'same-origin', 'report_to_group' => 'coop-key'],
+        'report_only' => ['enabled' => false, 'value' => 'same-origin'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->get('/probe'))->toThrow(InvalidReportToGroup::class);
+});
+
+test('the COOP headers replace pre-existing inbound headers rather than appending', function () {
+    config()->set('security-headers.reporting.endpoints', ['coop' => ['url' => 'https://a.example.com/coop']]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => true, 'value' => 'same-origin', 'reporting_endpoint' => 'coop'],
+        'report_only' => ['enabled' => true, 'value' => 'same-origin', 'reporting_endpoint' => 'coop'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', function () {
+        return response('ok')
+            ->header('Cross-Origin-Opener-Policy', 'stale-enforce')
+            ->header('Cross-Origin-Opener-Policy-Report-Only', 'stale-report-only');
+    });
+    $response = $this->get('/probe');
+
+    expect($response->headers->all('cross-origin-opener-policy'))->toHaveCount(1);
+    expect($response->headers->get('Cross-Origin-Opener-Policy'))->not->toContain('stale');
+    expect($response->headers->all('cross-origin-opener-policy-report-only'))->toHaveCount(1);
+    expect($response->headers->get('Cross-Origin-Opener-Policy-Report-Only'))->not->toContain('stale');
+});
+
+test('disabled COOP channels emit no COOP header and COOP is no longer a flat header', function () {
+    config()->set('security-headers.headers', ['x_frame_options' => ['enabled' => true, 'value' => 'DENY']]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => false, 'value' => 'same-origin'],
+        'report_only' => ['enabled' => false, 'value' => 'same-origin'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+    $response = $this->get('/probe');
+
+    $response->assertHeader('X-Frame-Options', 'DENY');
+    $response->assertHeaderMissing('Cross-Origin-Opener-Policy');
+    $response->assertHeaderMissing('Cross-Origin-Opener-Policy-Report-Only');
+});
+
+test('COOP emits regardless of the CSP vite-hot skip', function () {
+    config()->set('security-headers.reporting.endpoints', ['coop' => ['url' => 'https://a.example.com/coop']]);
+    config()->set('security-headers.csp', ['skip_when_vite_hot' => true, 'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    config()->set('security-headers.coop', [
+        'enforce' => ['enabled' => true, 'value' => 'same-origin', 'reporting_endpoint' => 'coop'],
+        'report_only' => ['enabled' => false, 'value' => 'same-origin'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    withViteHot(function () {
+        $response = $this->get('/probe');
+        $response->assertHeaderMissing('Content-Security-Policy');
+        expect($response->headers->get('Cross-Origin-Opener-Policy'))->toContain('report-to="coop"');
+    });
+});
+
+test('a non-array coop config is handled defensively', function () {
+    config()->set('security-headers.coop', 'not-an-array');
+    config()->set('security-headers.csp', ['enforce' => ['enabled' => true, 'policy' => StrictPolicy::class], 'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class]]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok');
+
+    $this->get('/probe')->assertHeaderMissing('Cross-Origin-Opener-Policy');
 });

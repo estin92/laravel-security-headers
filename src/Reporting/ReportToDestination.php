@@ -2,13 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Estin92\SecurityHeaders\Coep;
+namespace Estin92\SecurityHeaders\Reporting;
 
-use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
-use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
-use Estin92\SecurityHeaders\Reporting\ReportToGroup;
+use Estin92\SecurityHeaders\Exceptions\InvalidReportToDestination;
 
-final readonly class CoepReporting
+final readonly class ReportToDestination
 {
     private function __construct(
         public string $reportTo,
@@ -17,15 +15,15 @@ final readonly class CoepReporting
     public static function fromTargets(?ReportingEndpoint $modern, ?ReportToGroup $legacy): self
     {
         if ($legacy !== null && $legacy->isRemoval()) {
-            throw InvalidReportToGroup::removalGroupNotAddressable($legacy->group);
+            throw InvalidReportToDestination::removalGroupNotAddressable($legacy->group);
         }
 
         if ($modern !== null && $legacy !== null && $modern->name !== $legacy->group) {
-            throw InvalidReportToGroup::targetNameMismatch($modern->name, $legacy->group);
+            throw InvalidReportToDestination::targetNameMismatch($modern->name, $legacy->group);
         }
 
         if ($modern === null && $legacy === null) {
-            throw InvalidReportToGroup::noReportingTarget();
+            throw InvalidReportToDestination::noTarget();
         }
 
         return new self($modern !== null ? $modern->name : $legacy->group);

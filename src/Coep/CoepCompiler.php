@@ -7,10 +7,11 @@ namespace Estin92\SecurityHeaders\Coep;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
 use Estin92\SecurityHeaders\Exceptions\InvalidHeaderValue;
 use Estin92\SecurityHeaders\Headers\Coep;
+use Estin92\SecurityHeaders\Reporting\ReportToDestination;
 
 class CoepCompiler
 {
-    public function compile(mixed $value, ?CoepReporting $reporting = null): string
+    public function compile(mixed $value, ?ReportToDestination $reporting = null): string
     {
         $coep = is_string($value) ? Coep::tryFrom($value) : null;
 

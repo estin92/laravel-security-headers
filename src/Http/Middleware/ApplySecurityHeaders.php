@@ -6,12 +6,13 @@ namespace Estin92\SecurityHeaders\Http\Middleware;
 
 use Closure;
 use Estin92\SecurityHeaders\Coep\CoepCompiler;
-use Estin92\SecurityHeaders\Coep\CoepReporting;
+use Estin92\SecurityHeaders\Coop\CoopCompiler;
 use Estin92\SecurityHeaders\Csp\CspCompiler;
 use Estin92\SecurityHeaders\Csp\CspPolicy;
 use Estin92\SecurityHeaders\Csp\CspPolicyResolver;
 use Estin92\SecurityHeaders\Csp\CspReporting;
 use Estin92\SecurityHeaders\Exceptions\InvalidCoep;
+use Estin92\SecurityHeaders\Exceptions\InvalidCoop;
 use Estin92\SecurityHeaders\Exceptions\InvalidNel;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
@@ -23,6 +24,7 @@ use Estin92\SecurityHeaders\PermissionsPolicy\PermissionsPolicyCompiler;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpoint;
 use Estin92\SecurityHeaders\Reporting\ReportingEndpointsCompiler;
 use Estin92\SecurityHeaders\Reporting\ReportToCompiler;
+use Estin92\SecurityHeaders\Reporting\ReportToDestination;
 use Estin92\SecurityHeaders\Reporting\ReportToGroup;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -47,6 +49,9 @@ class ApplySecurityHeaders
             $this->coepChannel('enforce', 'Cross-Origin-Embedder-Policy'),
             $this->coepChannel('report_only', 'Cross-Origin-Embedder-Policy-Report-Only'),
         ]);
+
+        $coopEnforce = $this->coopEnforceChannel();
+        $coopReportOnly = $this->coopReportOnlyChannel();
 
         $nelDefinition = config('security-headers.nel');
         $nel = is_array($nelDefinition) && ($nelDefinition['enabled'] ?? false) === true
@@ -105,9 +110,26 @@ class ApplySecurityHeaders
             );
         }
 
+        if ($coopEnforce !== null) {
+            $response->headers->set(
+                'Cross-Origin-Opener-Policy',
+                (new CoopCompiler)->compileEnforce($coopEnforce['value'], $coopEnforce['reporting']),
+            );
+        }
+
+        if ($coopReportOnly !== null) {
+            $response->headers->set(
+                'Cross-Origin-Opener-Policy-Report-Only',
+                (new CoopCompiler)->compileReportOnly($coopReportOnly['value'], $coopReportOnly['reporting']),
+            );
+        }
+
+        $coopChannels = array_filter([$coopEnforce, $coopReportOnly]);
+
         $reportingHeader = $this->reportingEndpointsHeader(
             ...array_column($channels, 'endpoint'),
             ...array_column($coepChannels, 'endpoint'),
+            ...array_column($coopChannels, 'endpoint'),
         );
 
         if ($reportingHeader !== null) {
@@ -117,6 +139,7 @@ class ApplySecurityHeaders
         $groups = $this->reportToGroups(
             ...array_column($channels, 'group'),
             ...array_column($coepChannels, 'group'),
+            ...array_column($coopChannels, 'group'),
             ...($nelGroupRecord !== null ? [$nelGroupRecord] : []),
         );
 
@@ -192,7 +215,7 @@ class ApplySecurityHeaders
     }
 
     /**
-     * @return array{value: mixed, endpoint: ?ReportingEndpoint, reporting: ?CoepReporting, group: ?array{key: string, group: ReportToGroup}, header: string}|null
+     * @return array{value: mixed, endpoint: ?ReportingEndpoint, reporting: ?ReportToDestination, group: ?array{key: string, group: ReportToGroup}, header: string}|null
      */
     private function coepChannel(string $channel, string $header): ?array
     {
@@ -201,20 +224,65 @@ class ApplySecurityHeaders
         }
 
         $endpoint = $this->reportingEndpoint("coep.{$channel}");
-
-        if ($channel === 'report_only' && $endpoint === null) {
-            throw InvalidCoep::reportOnlyMissingEndpoint();
-        }
-
         $group = $this->reportToGroup("coep.{$channel}");
         $legacy = $group['group'] ?? null;
+
+        if ($channel === 'report_only' && $endpoint === null && $legacy === null) {
+            throw InvalidCoep::reportOnlyMissingDestination();
+        }
 
         return [
             'value' => config("security-headers.coep.{$channel}.value"),
             'endpoint' => $endpoint,
-            'reporting' => $endpoint !== null || $legacy !== null ? CoepReporting::fromTargets($endpoint, $legacy) : null,
+            'reporting' => $endpoint !== null || $legacy !== null ? ReportToDestination::fromTargets($endpoint, $legacy) : null,
             'group' => $group,
             'header' => $header,
+        ];
+    }
+
+    /**
+     * @return array{value: mixed, endpoint: ?ReportingEndpoint, reporting: ?ReportToDestination, group: ?array{key: string, group: ReportToGroup}}|null
+     */
+    private function coopEnforceChannel(): ?array
+    {
+        if (config('security-headers.coop.enforce.enabled') !== true) {
+            return null;
+        }
+
+        $endpoint = $this->reportingEndpoint('coop.enforce');
+        $group = $this->reportToGroup('coop.enforce');
+        $legacy = $group['group'] ?? null;
+
+        return [
+            'value' => config('security-headers.coop.enforce.value'),
+            'endpoint' => $endpoint,
+            'reporting' => $endpoint !== null || $legacy !== null ? ReportToDestination::fromTargets($endpoint, $legacy) : null,
+            'group' => $group,
+        ];
+    }
+
+    /**
+     * @return array{value: mixed, endpoint: ?ReportingEndpoint, reporting: ReportToDestination, group: ?array{key: string, group: ReportToGroup}}|null
+     */
+    private function coopReportOnlyChannel(): ?array
+    {
+        if (config('security-headers.coop.report_only.enabled') !== true) {
+            return null;
+        }
+
+        $endpoint = $this->reportingEndpoint('coop.report_only');
+        $group = $this->reportToGroup('coop.report_only');
+        $legacy = $group['group'] ?? null;
+
+        if ($endpoint === null && $legacy === null) {
+            throw InvalidCoop::reportOnlyMissingDestination();
+        }
+
+        return [
+            'value' => config('security-headers.coop.report_only.value'),
+            'endpoint' => $endpoint,
+            'reporting' => ReportToDestination::fromTargets($endpoint, $legacy),
+            'group' => $group,
         ];
     }
 
