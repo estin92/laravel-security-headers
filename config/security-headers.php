@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Estin92\SecurityHeaders\Csp\StrictPolicy;
 use Estin92\SecurityHeaders\PermissionsPolicy\Keyword;
 use Estin92\SecurityHeaders\Reporting\Ingestion\ReportType;
+use Estin92\SecurityHeaders\Support\IntegerConfig;
 
 return [
 
@@ -151,7 +152,7 @@ return [
             'report_type_enum' => ReportType::class,
 
             // Validate the body of a report type the package does not know how to check itself.
-            // Keyed by the report's `type` value; only for types your enum adds, not the built-in
+            // Keyed by the report's `type` value. Only for types your enum adds not the built-in
             // four (csp-violation, coep, coop, network-error), which validate themselves.
             'body_validators' => [
                 // 'document-policy-violation' => App\Reporting\DocumentPolicyReportValidator::class,
@@ -170,7 +171,7 @@ return [
             'storage' => [
                 // 'sanitized' or 'raw'.
                 'mode' => env('SECURITY_HEADERS_INGESTION_STORAGE_MODE', 'sanitized'),
-                // Required to run in 'raw' mode, which stores reports unscrubbed.
+                // Silences the audit warning that raw mode stores report data without sanitization.
                 'raw_acknowledged' => env('SECURITY_HEADERS_INGESTION_RAW_ACKNOWLEDGED', false),
                 // Scrubbing applied in 'sanitized' mode. remove_client_ip and mask_client_ip are exclusive.
                 'sanitizers' => [
@@ -185,11 +186,11 @@ return [
             ],
 
             'limits' => [
-                'max_bytes' => env('SECURITY_HEADERS_INGESTION_MAX_BYTES', 65536),
-                'max_reports_per_batch' => env('SECURITY_HEADERS_INGESTION_MAX_BATCH', 100),
-                'json_depth' => env('SECURITY_HEADERS_INGESTION_JSON_DEPTH', 32),
-                'url_length' => env('SECURITY_HEADERS_INGESTION_URL_LENGTH', 8192),
-                'user_agent_length' => env('SECURITY_HEADERS_INGESTION_UA_LENGTH', 1024),
+                'max_bytes' => IntegerConfig::parse(env('SECURITY_HEADERS_INGESTION_MAX_BYTES', 65536)),
+                'max_reports_per_batch' => IntegerConfig::parse(env('SECURITY_HEADERS_INGESTION_MAX_BATCH', 100)),
+                'json_depth' => IntegerConfig::parse(env('SECURITY_HEADERS_INGESTION_JSON_DEPTH', 32)),
+                'url_length' => IntegerConfig::parse(env('SECURITY_HEADERS_INGESTION_URL_LENGTH', 8192)),
+                'user_agent_length' => IntegerConfig::parse(env('SECURITY_HEADERS_INGESTION_UA_LENGTH', 1024)),
                 'relaxed_acknowledged' => false,
             ],
 
@@ -210,8 +211,8 @@ return [
             ],
 
             'retention' => [
-                'days' => env('SECURITY_HEADERS_INGESTION_RETENTION_DAYS', 30),
-                'max_rows' => env('SECURITY_HEADERS_INGESTION_MAX_ROWS', 100000),
+                'days' => IntegerConfig::parse(env('SECURITY_HEADERS_INGESTION_RETENTION_DAYS', 30)),
+                'max_rows' => IntegerConfig::parse(env('SECURITY_HEADERS_INGESTION_MAX_ROWS', 100000)),
             ],
         ],
     ],
