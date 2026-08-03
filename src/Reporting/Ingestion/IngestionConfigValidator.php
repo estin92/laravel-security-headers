@@ -106,6 +106,7 @@ final class IngestionConfigValidator
             }
         }
 
+        $this->assertBoolean($rate, 'enabled', 'rate_limiting.enabled');
         $this->assertBoolean($rate, 'external_limiting_acknowledged', 'rate_limiting.external_limiting_acknowledged');
     }
 

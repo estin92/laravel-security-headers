@@ -10,12 +10,15 @@ use Estin92\SecurityHeaders\Reporting\Ingestion\Events\ReportPruneFailed;
 use Estin92\SecurityHeaders\Reporting\Ingestion\Events\ReportsPruned;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
 final class PruneReportsCommand extends Command
 {
+    private const DELETE_BATCH_SIZE = 1000;
+
     protected $signature = 'security-headers:prune-reports';
 
     protected $description = 'Delete security reports past the retention window and row cap.';
@@ -50,30 +53,52 @@ final class PruneReportsCommand extends Command
         $days = $this->configInt('retention.days', 30);
         $cutoff = Carbon::now()->subDays($days);
 
-        $deleted = SecurityReport::query()->where('received_at', '<', $cutoff)->delete();
-
-        return is_int($deleted) ? $deleted : 0;
+        return $this->deleteInBatches(SecurityReport::query()->where('received_at', '<', $cutoff));
     }
 
     private function trimToMaxRows(): int
     {
         $maxRows = $this->configInt('retention.max_rows', 100000);
-        $total = SecurityReport::query()->count();
+        $surplus = SecurityReport::query()->count() - $maxRows;
 
-        if ($total <= $maxRows) {
+        if ($surplus <= 0) {
             return 0;
         }
 
-        $surplusIds = SecurityReport::query()
-            ->orderBy('received_at')
-            ->orderBy('id')
-            ->limit($total - $maxRows)
-            ->pluck('id')
-            ->all();
+        return $this->deleteInBatches(SecurityReport::query(), $surplus);
+    }
 
-        $deleted = SecurityReport::query()->whereIn('id', $surplusIds)->delete();
+    /**
+     * Delete the oldest matching rows in bounded batches, each its own short autocommit
+     * statement so live ingestion at the newest rows keeps flowing.
+     *
+     * @param  Builder<SecurityReport>  $query  the rows eligible for deletion
+     * @param  ?int  $limit  stop after this many rows, or null to delete every match
+     */
+    private function deleteInBatches(Builder $query, ?int $limit = null): int
+    {
+        $deleted = 0;
 
-        return is_int($deleted) ? $deleted : 0;
+        while ($limit === null || $deleted < $limit) {
+            $take = $limit === null ? self::DELETE_BATCH_SIZE : min(self::DELETE_BATCH_SIZE, $limit - $deleted);
+
+            $ids = (clone $query)
+                ->orderBy('received_at')
+                ->orderBy('id')
+                ->limit($take)
+                ->pluck('id')
+                ->all();
+
+            if ($ids === []) {
+                break;
+            }
+
+            $removed = SecurityReport::query()->whereIntegerInRaw('id', $ids)->delete();
+
+            $deleted += is_int($removed) ? $removed : 0;
+        }
+
+        return $deleted;
     }
 
     private function configInt(string $key, int $default): int

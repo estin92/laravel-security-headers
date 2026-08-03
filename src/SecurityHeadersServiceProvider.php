@@ -173,7 +173,7 @@ class SecurityHeadersServiceProvider extends ServiceProvider
     private function scheduleDailyPrune(): void
     {
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
-            $schedule->command(PruneReportsCommand::class)->daily();
+            $schedule->command(PruneReportsCommand::class)->daily()->withoutOverlapping();
         });
     }
 }

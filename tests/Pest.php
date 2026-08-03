@@ -15,8 +15,6 @@ uses(WithoutAutoRegistration::class)->in(
     __DIR__.'/Http/Ingestion/RouteDisabledTest.php',
 );
 uses(WithIngestionEnabled::class)->in(__DIR__.'/Http/Ingestion/ReportIngestionRouteTest.php');
-// Ingestion tests enable the feature at boot so the package migration loads;
-// the emission tests below do not need it.
 // Ingestion tests enable the feature at boot so the package migration loads.
 // ConfigDefaultsTest is excluded: it asserts the shipped default (disabled).
 uses(IngestionTestCase::class)->in(

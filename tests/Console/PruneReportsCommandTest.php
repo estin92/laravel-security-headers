@@ -35,6 +35,27 @@ function seedReport(string $receivedAt): SecurityReport
     ]);
 }
 
+function seedManyReports(int $count, string $receivedAt): void
+{
+    $rows = array_fill(0, $count, [
+        'type' => 'csp-violation',
+        'protocol' => 'reporting-api',
+        'url' => 'https://example.com/p',
+        'url_origin' => 'https://example.com',
+        'age' => 1,
+        'body' => null,
+        'storage_mode' => 'sanitized',
+        'sanitizer_version' => '0.1.0:'.str_repeat('a', 64),
+        'sanitization_actions' => '[]',
+        'incident_fingerprint' => str_repeat('a', 64),
+        'received_at' => $receivedAt,
+    ]);
+
+    foreach (array_chunk($rows, 500) as $chunk) {
+        SecurityReport::query()->insert($chunk);
+    }
+}
+
 test('it deletes rows older than the retention window and keeps the rest', function () {
     config()->set('security-headers.reporting.ingestion.retention.days', 30);
     config()->set('security-headers.reporting.ingestion.retention.max_rows', 100000);
@@ -61,6 +82,64 @@ test('it trims the oldest rows beyond max_rows', function () {
     expect(SecurityReport::query()->find($oldest->id))->toBeNull();
     expect(SecurityReport::query()->find($middle->id))->not->toBeNull();
     expect(SecurityReport::query()->find($newest->id))->not->toBeNull();
+});
+
+test('it trims a surplus spanning more than two batches, leaving exactly max_rows newest rows', function () {
+    config()->set('security-headers.reporting.ingestion.retention.days', 3650);
+    config()->set('security-headers.reporting.ingestion.retention.max_rows', 100);
+
+    seedManyReports(2100, now()->subDays(10)->toDateTimeString());
+    $keep = [];
+    for ($i = 0; $i < 100; $i++) {
+        $keep[] = seedReport(now()->subDays(1)->toDateTimeString())->id;
+    }
+
+    $this->artisan('security-headers:prune-reports')->assertSuccessful();
+
+    expect(SecurityReport::query()->count())->toBe(100);
+    expect(SecurityReport::query()->whereIn('id', $keep)->count())->toBe(100);
+});
+
+test('it removes expired rows spanning multiple batches while keeping non-expired', function () {
+    config()->set('security-headers.reporting.ingestion.retention.days', 30);
+    config()->set('security-headers.reporting.ingestion.retention.max_rows', 100000);
+
+    seedManyReports(2100, now()->subDays(40)->toDateTimeString());
+    $fresh = seedReport(now()->subDays(5)->toDateTimeString());
+
+    $this->artisan('security-headers:prune-reports')->assertSuccessful();
+
+    expect(SecurityReport::query()->count())->toBe(1);
+    expect(SecurityReport::query()->find($fresh->id))->not->toBeNull();
+});
+
+test('rows sharing a received_at are trimmed oldest-id first as the deterministic tie-break', function () {
+    config()->set('security-headers.reporting.ingestion.retention.days', 3650);
+    config()->set('security-headers.reporting.ingestion.retention.max_rows', 2);
+
+    $sameTime = now()->subDays(1)->toDateTimeString();
+    $a = seedReport($sameTime);
+    $b = seedReport($sameTime);
+    $c = seedReport($sameTime);
+    $d = seedReport($sameTime);
+
+    $this->artisan('security-headers:prune-reports')->assertSuccessful();
+
+    expect(SecurityReport::query()->find($a->id))->toBeNull();
+    expect(SecurityReport::query()->find($b->id))->toBeNull();
+    expect(SecurityReport::query()->find($c->id))->not->toBeNull();
+    expect(SecurityReport::query()->find($d->id))->not->toBeNull();
+});
+
+test('a prune with nothing to delete succeeds and removes nothing', function () {
+    config()->set('security-headers.reporting.ingestion.retention.days', 30);
+    config()->set('security-headers.reporting.ingestion.retention.max_rows', 100000);
+
+    $fresh = seedReport(now()->subDays(1)->toDateTimeString());
+
+    $this->artisan('security-headers:prune-reports')->assertSuccessful();
+
+    expect(SecurityReport::query()->find($fresh->id))->not->toBeNull();
 });
 
 test('a successful prune dispatches ReportsPruned with the counts', function () {

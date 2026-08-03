@@ -67,13 +67,14 @@ test('the ingestion route is not in the web group', function () {
     expect($route->gatherMiddleware())->not->toContain('web');
 });
 
-test('the daily prune schedule is registered when the route is active', function () {
+test('the daily prune schedule is registered without overlapping when the route is active', function () {
     $schedule = app(Schedule::class);
 
-    $commands = array_map(fn ($event) => $event->command, $schedule->events());
-    $prunes = array_filter($commands, fn ($command) => str_contains((string) $command, 'security-headers:prune-reports'));
+    $prune = collect($schedule->events())
+        ->first(fn ($event) => str_contains((string) $event->command, 'security-headers:prune-reports'));
 
-    expect($prunes)->not->toBeEmpty();
+    expect($prune)->not->toBeNull();
+    expect($prune->withoutOverlapping)->toBeTrue();
 });
 
 test('a missing table returns 503 without disclosing the reason, and fires the operational event', function () {
