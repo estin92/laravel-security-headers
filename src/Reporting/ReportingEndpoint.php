@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Estin92\SecurityHeaders\Reporting;
 
 use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
+use Estin92\SecurityHeaders\Support\TrustworthyLocalHost;
 
 final readonly class ReportingEndpoint
 {
@@ -88,28 +89,8 @@ final readonly class ReportingEndpoint
             throw InvalidReportingEndpoint::urlHasFragment($url);
         }
 
-        if ($scheme === 'http' && ! self::isTrustworthyLocalHost($parts['host'])) {
+        if ($scheme === 'http' && ! TrustworthyLocalHost::matches($parts['host'])) {
             throw InvalidReportingEndpoint::insecureUrl($url);
         }
-    }
-
-    private static function isTrustworthyLocalHost(string $host): bool
-    {
-        $host = strtolower($host);
-
-        if ($host === 'localhost' || str_ends_with($host, '.localhost')) {
-            return true;
-        }
-
-        if ($host === '[::1]') {
-            return true;
-        }
-
-        // Must be a real IPv4 in 127.0.0.0/8.
-        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
-            return false;
-        }
-
-        return str_starts_with($host, '127.');
     }
 }
