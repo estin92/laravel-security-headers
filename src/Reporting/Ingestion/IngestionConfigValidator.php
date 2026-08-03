@@ -123,7 +123,7 @@ final class IngestionConfigValidator
         $maxRows = $retention['max_rows'] ?? null;
 
         if (! is_int($maxRows) || $maxRows < 1 || $maxRows > 5000000) {
-            throw InvalidIngestionConfig::notAPositiveInt('retention.max_rows');
+            throw InvalidIngestionConfig::limitOutOfRange('retention.max_rows', 1, 5000000);
         }
     }
 

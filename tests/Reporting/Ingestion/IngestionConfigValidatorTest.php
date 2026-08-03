@@ -126,9 +126,9 @@ test('a non-positive retention window is rejected', function (string $key) {
         ->toThrow(InvalidIngestionConfig::class);
 })->with(['days', 'max_rows']);
 
-test('a retention row cap over its ceiling is rejected', function () {
+test('a retention row cap over its ceiling is rejected with a message stating the bound', function () {
     expect(fn () => validate(validIngestionConfig(['retention' => ['max_rows' => 5000001]])))
-        ->toThrow(InvalidIngestionConfig::class);
+        ->toThrow(InvalidIngestionConfig::class, 'must be an integer between 1 and 5000000');
 });
 
 test('an invalid report_type_enum is rejected', function () {

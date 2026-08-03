@@ -17,8 +17,10 @@ class Origin
             return null;
         }
 
-        if (array_any(['user', 'pass', 'path', 'query', 'fragment'], fn($extra) => isset($parts[$extra]))) {
-            return null;
+        foreach (['user', 'pass', 'path', 'query', 'fragment'] as $extra) {
+            if (isset($parts[$extra])) {
+                return null;
+            }
         }
 
         $scheme = strtolower($parts['scheme']);
