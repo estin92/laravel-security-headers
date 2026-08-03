@@ -38,8 +38,9 @@ final class EnforceReportBodySize
 
     private function maxBytes(): int
     {
+        // Boot validation guarantees an int; require one here too rather than coerce a float or numeric string.
         $max = config('security-headers.reporting.ingestion.limits.max_bytes');
 
-        return is_numeric($max) ? (int) $max : 65536;
+        return is_int($max) ? $max : 65536;
     }
 }

@@ -176,6 +176,18 @@ test('a body over the size limit is 413 before it reaches the route', function (
     Event::assertDispatched(ReportSubmissionRejected::class, fn ($e) => $e->reason === RejectionReason::RequestTooLarge);
 });
 
+test('a non-int max_bytes falls back to the default rather than coercing a float or string', function (mixed $configured) {
+    config()->set('security-headers.reporting.ingestion.limits.max_bytes', $configured);
+
+    $response = post(str_repeat('a', 50));
+
+    $response->assertNoContent(204);
+})->with([
+    'float' => [1.9],
+    'numeric string' => ['10'],
+    'scientific string' => ['1e1'],
+]);
+
 test('exceeding the rate limit is 429 with Retry-After and the JSON body', function () {
     Event::fake([ReportSubmissionRejected::class]);
     config()->set('security-headers.reporting.ingestion.rate_limiting.reporting_api_per_minute', 1);
@@ -206,6 +218,32 @@ test('the package per-minute settings do not override a custom limiter', functio
 
     post('[]');
     $response = post('[]');
+
+    $response->assertNoContent(204);
+});
+
+test('a limiter that produces no valid limit fails closed with 503 rather than passing through unthrottled', function (mixed $return) {
+    RateLimiter::for('broken-limiter', fn () => $return);
+    config()->set('security-headers.reporting.ingestion.rate_limiting.limiter', 'broken-limiter');
+
+    $response = post('[]');
+
+    $response->assertStatus(503);
+    $response->assertJson(['error' => 'service_unavailable']);
+})->with([
+    'empty array' => [[]],
+    'null' => [null],
+    'a non-limit value' => ['not a limit'],
+    'an array without any Limit' => [[1, 'two']],
+]);
+
+test('a limiter intentionally returning Limit::none() passes through unthrottled', function () {
+    RateLimiter::for('unlimited-limiter', fn () => Limit::none());
+    config()->set('security-headers.reporting.ingestion.rate_limiting.limiter', 'unlimited-limiter');
+
+    foreach (range(1, 5) as $ignored) {
+        $response = post('[]');
+    }
 
     $response->assertNoContent(204);
 });

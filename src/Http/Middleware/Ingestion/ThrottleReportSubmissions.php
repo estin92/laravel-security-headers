@@ -15,6 +15,7 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Throwable;
 
 final class ThrottleReportSubmissions
 {
@@ -39,7 +40,20 @@ final class ThrottleReportSubmissions
             return $this->limiterUnavailable();
         }
 
-        foreach ($this->toLimits($callback($request)) as $limit) {
+        // A malformed limiter can throw inside the framework wrapper, so fail closed rather than 500.
+        try {
+            $limits = $this->toLimits($callback($request));
+        } catch (Throwable) {
+            return $this->limiterUnavailable();
+        }
+
+        // A registered limiter that produces no Limit is malformed; fail closed rather than pass through unthrottled.
+        // An intentional "unlimited" uses Limit::none(), which is a Limit and is handled by the loop below.
+        if ($limits === []) {
+            return $this->limiterUnavailable();
+        }
+
+        foreach ($limits as $limit) {
             $key = $this->keyFor($limit);
 
             if ($this->limiter->tooManyAttempts($key, $limit->maxAttempts)) {
@@ -67,7 +81,7 @@ final class ThrottleReportSubmissions
     {
         // The submission was never evaluated, so this is a server-side config
         // failure (503), not a rejection or a rate-limit.
-        $this->logger->error('The configured report ingestion rate limiter is not registered.', [
+        $this->logger->error('The configured report ingestion rate limiter is missing or produced no limits.', [
             'limiter' => $this->limiterName(),
         ]);
 
