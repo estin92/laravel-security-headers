@@ -53,6 +53,36 @@ function nodeByKey(array $nodes, string $key)
     return null;
 }
 
+function countNodes(array $nodes): int
+{
+    $count = 0;
+
+    foreach ($nodes as $node) {
+        $count++;
+
+        if (is_array($node->children)) {
+            $count += countNodes($node->children);
+        }
+    }
+
+    return $count;
+}
+
+function countOmitted(array $nodes): int
+{
+    $omitted = 0;
+
+    foreach ($nodes as $node) {
+        $omitted += $node->childrenOmitted;
+
+        if (is_array($node->children)) {
+            $omitted += countOmitted($node->children);
+        }
+    }
+
+    return $omitted;
+}
+
 function resolveReport(SecurityReport $report, ?ResolverCaps $caps = null): array
 {
     return (new StateResolver(new KnownFieldCatalogue))->resolve($report, $caps ?? new ResolverCaps);
@@ -169,53 +199,33 @@ test('the global node cap bounds total nodes even when every container is under 
 
     $nodes = resolveReport($report, new ResolverCaps(maxChildren: 50, maxNodes: 100));
 
-    $count = 0;
-    $walk = function (array $ns) use (&$walk, &$count): void {
-        foreach ($ns as $n) {
-            $count++;
-            if (is_array($n->children)) {
-                $walk($n->children);
-            }
-        }
-    };
-    $walk($nodes);
+    expect(countNodes(bodyNodes($nodes)))->toBeLessThanOrEqual(100);
 
-    expect($count)->toBeLessThanOrEqual(100);
-
-    $omitted = 0;
-    $sumOmitted = function (array $ns) use (&$sumOmitted, &$omitted): void {
-        foreach ($ns as $n) {
-            $omitted += $n->childrenOmitted;
-            if (is_array($n->children)) {
-                $sumOmitted($n->children);
-            }
-        }
-    };
-    $sumOmitted($nodes);
-
-    expect($omitted)->toBeGreaterThan(0);
+    expect(countOmitted($nodes))->toBeGreaterThan(0);
 });
 
 test('the global node cap bounds a catalogue type and surfaces the omission on the body node', function () {
     $report = reportWith(['blockedURL' => 'x'], [], ['type' => 'network-error']);
 
-    $nodes = resolveReport($report, new ResolverCaps(maxNodes: 5));
+    $nodes = resolveReport($report, new ResolverCaps(maxNodes: 3));
 
-    $count = 0;
-    $walk = function (array $ns) use (&$walk, &$count): void {
-        foreach ($ns as $n) {
-            $count++;
-            if (is_array($n->children)) {
-                $walk($n->children);
-            }
-        }
-    };
-    $walk($nodes);
-
-    expect($count)->toBeLessThanOrEqual(5);
+    expect(countNodes(bodyNodes($nodes)))->toBeLessThanOrEqual(3);
 
     $body = nodeByKey($nodes, 'body');
     expect($body->childrenOmitted)->toBeGreaterThan(0);
+});
+
+test('the context skeleton is always emitted in full even when the node cap is exhausted', function () {
+    $report = reportWith(['blockedURL' => 'x'], [], ['type' => 'network-error']);
+
+    $nodes = resolveReport($report, new ResolverCaps(maxNodes: 1));
+
+    expect($nodes)->toHaveCount(5);
+    expect(nodeByKey($nodes, 'url'))->not->toBeNull();
+    expect(nodeByKey($nodes, 'client_ip'))->not->toBeNull();
+    expect(nodeByKey($nodes, 'request_user_agent'))->not->toBeNull();
+    expect(nodeByKey($nodes, 'reported_user_agent'))->not->toBeNull();
+    expect(nodeByKey($nodes, 'body'))->not->toBeNull();
 });
 
 test('an empty-string context field resolves to empty, matching body-field semantics', function () {

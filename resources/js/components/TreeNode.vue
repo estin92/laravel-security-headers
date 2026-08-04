@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { ChevronRight } from 'lucide-vue-next';
 import type { PresentationNode } from '@/lib/types';
 import { presentationFor } from '@/lib/state-presentation';
@@ -9,11 +9,11 @@ import Badge from '@/components/ui/Badge.vue';
 const props = defineProps<{ node: PresentationNode; depth: number }>();
 
 const open = ref(true);
-const hasChildren = props.node.children !== null && props.node.children.length > 0;
-const presentation = presentationFor(props.node.state);
+const hasChildren = computed(() => (props.node.children?.length ?? 0) > 0);
+const presentation = computed(() => presentationFor(props.node.state));
 
 function toggle(): void {
-    if (hasChildren) {
+    if (hasChildren.value) {
         open.value = !open.value;
     }
 }

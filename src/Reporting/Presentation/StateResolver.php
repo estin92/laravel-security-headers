@@ -26,11 +26,9 @@ final class StateResolver
         $nodes = [];
 
         foreach (self::CONTEXT_FIELDS as $field) {
-            $budget--;
             $nodes[] = $this->contextNode($field, $report->{$field}, $actions, $caps);
         }
 
-        $budget--;
         $nodes[] = $this->bodyNode($report, $actions, $caps, $budget);
 
         return $nodes;
