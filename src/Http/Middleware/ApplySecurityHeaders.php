@@ -18,6 +18,7 @@ use Estin92\SecurityHeaders\Exceptions\InvalidReportingEndpoint;
 use Estin92\SecurityHeaders\Exceptions\InvalidReportToGroup;
 use Estin92\SecurityHeaders\Headers\FlatHeaderCompiler;
 use Estin92\SecurityHeaders\Headers\HstsCompiler;
+use Estin92\SecurityHeaders\Http\Viewer\ViewerRoutes;
 use Estin92\SecurityHeaders\Nel\NelCompiler;
 use Estin92\SecurityHeaders\Nel\NelPolicy;
 use Estin92\SecurityHeaders\PermissionsPolicy\PermissionsPolicyCompiler;
@@ -94,6 +95,12 @@ class ApplySecurityHeaders
 
         if ($permissionsPolicy !== null) {
             $response->headers->set('Permissions-Policy', $permissionsPolicy);
+        }
+
+        // The viewer emits its own CSP; drop our channels on its routes so neither the
+        // header nor its reporting endpoints/groups are authored here.
+        if ($request->routeIs(ViewerRoutes::WILDCARD)) {
+            $channels = [];
         }
 
         foreach ($channels as $channel) {

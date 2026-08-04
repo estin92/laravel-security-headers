@@ -1493,3 +1493,52 @@ test('a non-array coop config is handled defensively', function () {
 
     $this->get('/probe')->assertHeaderMissing('Cross-Origin-Opener-Policy');
 });
+
+test('a viewer route is excluded from CSP but keeps every other hardening header', function () {
+    config()->set('security-headers.csp.enforce.enabled', true);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok')->name('security-headers.viewer.shell');
+
+    $response = $this->get('/probe');
+
+    $response->assertHeaderMissing('Content-Security-Policy');
+    $response->assertHeader('X-Content-Type-Options', 'nosniff');
+    $response->assertHeader('X-Frame-Options', 'DENY');
+});
+
+test('a viewer api route is also excluded from CSP', function () {
+    config()->set('security-headers.csp.enforce.enabled', true);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok')->name('security-headers.viewer.api.reports');
+
+    $this->get('/probe')->assertHeaderMissing('Content-Security-Policy');
+});
+
+test('a non-viewer route still gets the CSP', function () {
+    config()->set('security-headers.csp.enforce.enabled', true);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok')->name('something.else');
+
+    $response = $this->get('/probe');
+
+    $response->assertHeader('Content-Security-Policy');
+    expect($response->headers->get('Content-Security-Policy'))->toContain("default-src 'self'");
+});
+
+test('a viewer route leaks no CSP reporting endpoint into Reporting-Endpoints, but COEP still contributes', function () {
+    config()->set('security-headers.reporting.endpoints', [
+        'csp' => ['url' => 'https://a.example.com/csp'],
+        'coep' => ['url' => 'https://a.example.com/coep'],
+    ]);
+    config()->set('security-headers.csp', [
+        'enforce' => ['enabled' => true, 'policy' => StrictPolicy::class, 'reporting_endpoint' => 'csp'],
+        'report_only' => ['enabled' => false, 'policy' => StrictPolicy::class],
+    ]);
+    config()->set('security-headers.coep', [
+        'enforce' => ['enabled' => true, 'value' => 'require-corp', 'reporting_endpoint' => 'coep'],
+        'report_only' => ['enabled' => false, 'value' => 'require-corp'],
+    ]);
+    Route::middleware(ApplySecurityHeaders::class)->get('/probe', fn () => 'ok')->name('security-headers.viewer.shell');
+
+    $response = $this->get('/probe');
+
+    $response->assertHeaderMissing('Content-Security-Policy');
+    expect($response->headers->get('Reporting-Endpoints'))->toBe('coep="https://a.example.com/coep"');
+});

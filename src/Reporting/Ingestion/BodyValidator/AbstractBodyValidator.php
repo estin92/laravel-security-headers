@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Estin92\SecurityHeaders\Reporting\Ingestion\BodyValidator;
 
 use Estin92\SecurityHeaders\Exceptions\InvalidReportBody;
+use Estin92\SecurityHeaders\Reporting\Fields\FieldKind;
+use Estin92\SecurityHeaders\Reporting\Fields\KnownFieldCatalogue;
 use Estin92\SecurityHeaders\Support\JsonObject;
 
 abstract class AbstractBodyValidator implements ReportBodyValidator
@@ -15,7 +17,15 @@ abstract class AbstractBodyValidator implements ReportBodyValidator
             return;
         }
 
-        $this->validateFields($body);
+        foreach ((new KnownFieldCatalogue)->for($this->type()) ?? [] as $spec) {
+            match ($spec->kind) {
+                FieldKind::StringValue => $this->assertString($body, $spec->name),
+                FieldKind::NonNegativeInt => $this->assertNonNegativeInt($body, $spec->name),
+                FieldKind::Fraction => $this->assertFraction($body, $spec->name),
+                FieldKind::EnumSet => $this->assertInSet($body, $spec->name, $spec->allowed),
+                FieldKind::HeaderMap => $this->assertHeaderMap($body, $spec->name),
+            };
+        }
     }
 
     protected function assertString(JsonObject $body, string $field): void
@@ -106,6 +116,4 @@ abstract class AbstractBodyValidator implements ReportBodyValidator
     }
 
     abstract protected function type(): string;
-
-    abstract protected function validateFields(JsonObject $body): void;
 }

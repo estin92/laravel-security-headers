@@ -1,0 +1,22 @@
+name: frontend
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Type-check, test and prove the committed dist is reproducible
+        run: |
+          npm ci
+          npm run types:check
+          npm run test:coverage
+          bash scripts/check-dist-drift.sh

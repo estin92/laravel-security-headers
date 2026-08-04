@@ -9,6 +9,7 @@ use Estin92\SecurityHeaders\Models\Casts\JsonObjectCast;
 use Estin92\SecurityHeaders\Reporting\Ingestion\IngestionStorage;
 use Estin92\SecurityHeaders\Support\JsonObject;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -25,7 +26,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $sanitizer_version
  * @property list<array{path: list<string|int>, action: string}> $sanitization_actions
  * @property string $incident_fingerprint
- * @property DateTimeInterface $received_at
+ * @property-read Carbon $received_at
+ * @property-write DateTimeInterface $received_at
  */
 class SecurityReport extends Model
 {
