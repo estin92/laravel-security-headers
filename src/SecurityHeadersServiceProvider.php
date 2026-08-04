@@ -8,11 +8,20 @@ use Estin92\SecurityHeaders\Console\AuditCommand;
 use Estin92\SecurityHeaders\Console\PruneReportsCommand;
 use Estin92\SecurityHeaders\Exceptions\InvalidIngestionConfig;
 use Estin92\SecurityHeaders\Http\Controllers\ReportIngestionController;
+use Estin92\SecurityHeaders\Http\Controllers\Viewer\AssetController;
+use Estin92\SecurityHeaders\Http\Controllers\Viewer\FilterOptionsController;
+use Estin92\SecurityHeaders\Http\Controllers\Viewer\IncidentController;
+use Estin92\SecurityHeaders\Http\Controllers\Viewer\ReportDetailController;
+use Estin92\SecurityHeaders\Http\Controllers\Viewer\ReportFeedController;
+use Estin92\SecurityHeaders\Http\Controllers\Viewer\ShellController;
 use Estin92\SecurityHeaders\Http\Middleware\ApplySecurityHeaders;
 use Estin92\SecurityHeaders\Http\Middleware\Ingestion\EnforceReportBodySize;
 use Estin92\SecurityHeaders\Http\Middleware\Ingestion\EnsureStorageReady;
 use Estin92\SecurityHeaders\Http\Middleware\Ingestion\HandleReportCors;
 use Estin92\SecurityHeaders\Http\Middleware\Ingestion\ThrottleReportSubmissions;
+use Estin92\SecurityHeaders\Http\Middleware\Viewer\ApplyViewerCsp;
+use Estin92\SecurityHeaders\Http\Middleware\Viewer\AuthorizeReportViewer;
+use Estin92\SecurityHeaders\Http\Viewer\ViewerRoutes;
 use Estin92\SecurityHeaders\Reporting\Ingestion\BodyValidator\BodyValidatorRegistry;
 use Estin92\SecurityHeaders\Reporting\Ingestion\DefaultIngestionRateLimiter;
 use Estin92\SecurityHeaders\Reporting\Ingestion\IngestionConfigValidator;
@@ -69,6 +78,10 @@ class SecurityHeadersServiceProvider extends ServiceProvider
         if (config('security-headers.reporting.ingestion.enabled') === true) {
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
             $this->bootIngestion();
+        }
+
+        if (config('security-headers.reporting.viewer.enabled') === true) {
+            $this->bootViewer();
         }
     }
 
@@ -174,6 +187,37 @@ class SecurityHeadersServiceProvider extends ServiceProvider
     {
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
             $schedule->command(PruneReportsCommand::class)->daily()->withoutOverlapping();
+        });
+    }
+
+    private function bootViewer(): void
+    {
+        $this->loadViewsFrom(__DIR__.'/../resources/views', 'security-headers');
+
+        $path = config('security-headers.reporting.viewer.path');
+        $path = rtrim(is_string($path) ? $path : '/security-headers/reports', '/');
+
+        $domain = config('security-headers.reporting.viewer.domain');
+        $configured = config('security-headers.reporting.viewer.middleware');
+        $middleware = is_array($configured) ? array_values(array_filter($configured, 'is_string')) : ['web'];
+
+        $gated = [...$middleware, AuthorizeReportViewer::class];
+
+        Route::group(array_filter([
+            'domain' => is_string($domain) ? $domain : null,
+            'prefix' => $path,
+        ]), function () use ($gated): void {
+            Route::get('api/reports', ReportFeedController::class)->middleware($gated)->name(ViewerRoutes::API_REPORTS);
+            Route::get('api/reports/{id}', ReportDetailController::class)->whereNumber('id')->middleware($gated)->name(ViewerRoutes::API_REPORT);
+            Route::get('api/incidents/{fingerprint}', IncidentController::class)->middleware($gated)->name(ViewerRoutes::API_INCIDENTS);
+            Route::get('api/filters', FilterOptionsController::class)->middleware($gated)->name(ViewerRoutes::API_FILTERS);
+
+            Route::get('assets/{path}', AssetController::class)->where('path', '.*')->name(ViewerRoutes::ASSETS);
+
+            Route::get('{view?}', ShellController::class)
+                ->where('view', '.*')
+                ->middleware([...$gated, ApplyViewerCsp::class])
+                ->name(ViewerRoutes::SHELL);
         });
     }
 }

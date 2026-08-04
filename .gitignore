@@ -1,5 +1,6 @@
 /vendor
 /build
+/node_modules
 composer.lock
 .phpunit.result.cache
 .phpunit.cache
@@ -10,3 +11,4 @@ phpstan.neon
 CLAUDE.md
 AGENTS.md
 .claude
+/coverage

@@ -6,6 +6,8 @@ use Estin92\SecurityHeaders\Tests\Http\WithIngestionEnabled;
 use Estin92\SecurityHeaders\Tests\Http\WithoutAutoRegistration;
 use Estin92\SecurityHeaders\Tests\Reporting\Ingestion\IngestionTestCase;
 use Estin92\SecurityHeaders\Tests\TestCase;
+use Estin92\SecurityHeaders\Tests\ViewerTestCase;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 // Http tests disable auto-registration so the route-attached middleware runs
 // once, not twice. Bindings cannot overlap, so each file is bound explicitly.
@@ -31,6 +33,7 @@ uses(IngestionTestCase::class)->in(
     __DIR__.'/Reporting/Ingestion/ModernReportDecoderTest.php',
     __DIR__.'/Reporting/Ingestion/NormalizedReportTest.php',
     __DIR__.'/Reporting/Ingestion/RejectionReasonTest.php',
+    __DIR__.'/Reporting/Ingestion/ReportFiltersTest.php',
     __DIR__.'/Reporting/Ingestion/ReportTypeResolverTest.php',
     __DIR__.'/Reporting/Ingestion/ReportTypeTest.php',
     __DIR__.'/Reporting/Ingestion/SanitizerTest.php',
@@ -54,4 +57,55 @@ uses(TestCase::class)->in(
     __DIR__.'/Support',
     __DIR__.'/AutoRegistrationTest.php',
     __DIR__.'/ServiceProviderTest.php',
+    __DIR__.'/Http/Viewer/ViewerApiExceptionTest.php',
+    __DIR__.'/Http/Viewer/ViewerGateTest.php',
+    __DIR__.'/Http/Viewer/AuthorizeReportViewerTest.php',
+    __DIR__.'/Http/Viewer/PageLimitTest.php',
+    __DIR__.'/Http/Viewer/CursorCodecTest.php',
 );
+uses(ViewerTestCase::class)->in(
+    __DIR__.'/Http/Viewer/ViewerApiTest.php',
+    __DIR__.'/Http/Viewer/ViewerShellTest.php',
+    __DIR__.'/Http/Viewer/ViewerAssetTest.php',
+    __DIR__.'/Http/Viewer/ViewerCspTest.php',
+    __DIR__.'/Http/Viewer/ViewerAuthorizationMatrixTest.php',
+    __DIR__.'/Http/Viewer/CompiledAssetSmokeTest.php',
+);
+
+function fakeViewer(): Authenticatable
+{
+    return new class implements Authenticatable
+    {
+        public function getAuthIdentifierName(): string
+        {
+            return 'id';
+        }
+
+        public function getAuthIdentifier(): int
+        {
+            return 1;
+        }
+
+        public function getAuthPasswordName(): string
+        {
+            return 'password';
+        }
+
+        public function getAuthPassword(): string
+        {
+            return '';
+        }
+
+        public function getRememberToken(): string
+        {
+            return '';
+        }
+
+        public function setRememberToken($value): void {}
+
+        public function getRememberTokenName(): string
+        {
+            return '';
+        }
+    };
+}

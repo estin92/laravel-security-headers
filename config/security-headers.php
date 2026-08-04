@@ -215,6 +215,16 @@ return [
                 'max_rows' => IntegerConfig::parse(env('SECURITY_HEADERS_INGESTION_MAX_ROWS', 100000)),
             ],
         ],
+
+        'viewer' => [
+            'enabled' => env('SECURITY_HEADERS_VIEWER_ENABLED', false),
+            'path' => env('SECURITY_HEADERS_VIEWER_PATH', '/security-headers/reports'),
+            'domain' => env('SECURITY_HEADERS_VIEWER_DOMAIN'),
+            // Add 'auth' or your own admin stack to require authentication before the gate.
+            'middleware' => ['web'],
+            // Override only for a non-standard deploy layout; defaults to the package's own dist.
+            'dist_path' => env('SECURITY_HEADERS_VIEWER_DIST_PATH'),
+        ],
     ],
 
     'nel' => [
